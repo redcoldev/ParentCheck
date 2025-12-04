@@ -1,11 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-import psycopg2
+import psycopg
 import requests
 import json
-import pandas as pd
-from io import BytesIO
+import csv
+from io import StringIO, BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -15,7 +15,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev")
 
 # DB
-conn = psycopg2.connect(os.environ["DATABASE_URL"], sslmode="require")
+DB_URL = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://")
+conn = psycopg.connect(DB_URL, autocommit=True)
 cur = conn.cursor()
 
 # Login
@@ -60,22 +61,20 @@ def upload():
     if request.method == "POST":
         f = request.files["file"]
         if f and f.filename.endswith(".csv"):
-            df = pd.read_csv(f)
+            csv_content = f.read().decode('utf-8')
+            reader = csv.DictReader(StringIO(csv_content))
+            rows = list(reader)
             required = {"first_name", "last_name", "country_of_citizenship", "dob"}
-            if required.issubset(df.columns):
+            if required.issubset(reader.fieldnames):
                 cur.execute("INSERT INTO batches (user_id, filename) VALUES (%s, %s) RETURNING id",
                             (current_user.id, f.filename))
                 batch_id = cur.fetchone()[0]
-                conn.commit()
-                process_batch.delay(batch_id, df.to_dict("records"))
+                process_batch(batch_id, rows)
                 flash("Processing started")
                 return redirect("/dashboard")
+        flash("Invalid CSV")
     return render_template("upload.html")
 
-from celery import Celery
-celery = Celery(app.name, broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"))
-
-@celery.task
 def process_batch(batch_id, rows):
     key = os.environ.get("OPEN_SANCTIONS_KEY", "")
     headers = {"Content-Type": "application/json"}
@@ -92,9 +91,9 @@ def process_batch(batch_id, rows):
                 }
             }}
         }
-        if pd.notna(row.get("dob")):
+        if row.get("dob"):
             payload["queries"]["q1"]["properties"]["birthDate"] = [str(row["dob"])]
-        if pd.notna(row.get("country_of_citizenship")):
+        if row.get("country_of_citizenship"):
             payload["queries"]["q1"]["properties"]["nationality"] = [row["country_of_citizenship"][:2].lower()]
 
         r = requests.post("https://api.opensanctions.org/match/default", json=payload, headers=headers)
@@ -104,16 +103,15 @@ def process_batch(batch_id, rows):
         match = None
         if data.get("responses", {}).get("q1", {}).get("results"):
             entity = data["responses"]["q1"]["results"][0]
-            names = [entity["caption"]] + [a["value"] for a in entity.get("properties", {}).get("alias", [])]
+            names = [entity.get("caption", "")] + [a.get("value", "") for a in entity.get("properties", {}).get("alias", [])]
             full = f"{row['first_name']} {row['last_name']}".lower()
-            if any(full in n.lower() for n in names):
+            if any(full in n.lower() for n in names if n):
                 match = json.dumps(data)
                 risk = "High" if "sanction" in str(entity).lower() else "Review"
 
         cur.execute("""INSERT INTO results (batch_id, first_name, last_name, dob, country_of_citizenship, risk_level, match_data)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (batch_id, row["first_name"], row["last_name"], row.get("dob"), row.get("country_of_citizenship"), risk, match))
-        conn.commit()
 
 @app.route("/results/<int:batch_id>")
 @login_required
@@ -121,9 +119,14 @@ def results(batch_id):
     cur.execute("SELECT * FROM results WHERE batch_id=%s ORDER BY id", (batch_id,))
     rows = cur.fetchall()
     if request.args.get("xlsx"):
-        df = pd.DataFrame(rows)
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['ID', 'Batch ID', 'First Name', 'Last Name', 'DOB', 'Country', 'Risk', 'Match Data'])
+        for row in rows:
+            ws.append(row)
         output = BytesIO()
-        df.to_excel(output, index=False)
+        wb.save(output)
         output.seek(0)
         return send_file(output, download_name="results.xlsx", as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     return render_template("results.html", rows=rows, batch_id=batch_id)
