@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>Upload Batch - ParentCheck+</title></head>
+<body style="font-family:Arial;margin:40px">
+<h1>Upload Parent List</h1>
+<p>CSV must have these exact columns: first_name, last_name, country_of_citizenship, dob</p>
+<form method="post" enctype="multipart/form-data">
+  <input type="file" name="file" accept=".csv" required><br><br>
+  <button type="submit" style="padding:10px 20px">Start Screening</button>
+</form>
+<br><a href="/dashboard">← Back to dashboard</a>
+</body>
+</html>
