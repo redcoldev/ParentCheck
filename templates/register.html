@@ -1,39 +1,33 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Create School Account</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 400px; 
-            margin: 40px auto; 
-            padding: 20px; 
-        }
-        label { display: block; margin-top: 12px; }
-        input { width: 100%; padding: 8px; margin-top: 4px; }
-        button { margin-top: 20px; padding: 10px; width: 100%; }
-    </style>
-</head>
-<body>
-    <h2>Create School Admin Account</h2>
+{% extends "base.html" %}
+{% block content %}
 
-    <form method="POST">
+<h1>Create Admin Account</h1>
+<p>This page is for ParentCheck+ administrators only.</p>
+
+<form method="POST">
+
+    <div class="form-group">
         <label>Email</label>
         <input type="email" name="email" required>
+    </div>
 
+    <div class="form-group">
         <label>Password</label>
         <input type="password" name="password" required>
+    </div>
 
-        <label>School Name</label>
+    <div class="form-group">
+        <label>School / Organisation Name</label>
         <input type="text" name="school_name" required>
+    </div>
 
-        <button type="submit">Create Account</button>
-    </form>
+    <button class="btn-primary" type="submit">Create Account</button>
 
     {% if get_flashed_messages() %}
-        <p style="color:red;">
+        <p style="color:#C62828; margin-top: 15px;">
             {{ get_flashed_messages()[0] }}
         </p>
     {% endif %}
-</body>
-</html>
+</form>
+
+{% endblock %}
