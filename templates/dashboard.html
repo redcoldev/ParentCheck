@@ -1,10 +1,33 @@
-<!DOCTYPE html>
-<html>
-<head><title>Dashboard - ParentCheck+</title></head>
-<body style="font-family:Arial;margin:40px">
-<h1>Welcome, {{ current_user.school_name }}</h1>
-<p><a href="/upload">Upload new batch</a> | <a href="/logout">Logout</a></p>
-<h2>Your recent batches</h2>
-<p>(upload a batch first to see results)</p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Dashboard</h1>
+<p>Welcome, {{ current_user.school_name }}.</p>
+
+<div class="card">
+    <h2>Upload a New CSV</h2>
+    <p>Process a new student batch.</p>
+    <a href="/upload"><button class="btn-primary">Upload CSV</button></a>
+</div>
+
+<div class="card">
+    <h2>Your Recent Batches</h2>
+
+    {% if batches %}
+        <ul>
+        {% for b in batches %}
+            <li>
+                <a href="/results/{{ b[0] }}">Batch #{{ b[0] }} - {{ b[1] }}</a>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>You have no processed batches yet.</p>
+    {% endif %}
+</div>
+
+<div class="inline-buttons">
+    <a href="/logout"><button class="btn-secondary">Logout</button></a>
+</div>
+
+{% endblock %}
