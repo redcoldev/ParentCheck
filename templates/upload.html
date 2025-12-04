@@ -1,13 +1,23 @@
-<!DOCTYPE html>
-<html>
-<head><title>Upload Batch - ParentCheck+</title></head>
-<body style="font-family:Arial;margin:40px">
-<h1>Upload Parent List</h1>
-<p>CSV must have these exact columns: first_name, last_name, country_of_citizenship, dob</p>
-<form method="post" enctype="multipart/form-data">
-  <input type="file" name="file" accept=".csv" required><br><br>
-  <button type="submit" style="padding:10px 20px">Start Screening</button>
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Upload CSV</h1>
+<p>Please upload a CSV file containing student information.</p>
+
+<form method="POST" enctype="multipart/form-data">
+
+    <div class="form-group">
+        <label>Select CSV File</label>
+        <input type="file" name="file" accept=".csv" required>
+    </div>
+
+    <button class="btn-primary" type="submit">Process File</button>
+
+    {% if get_flashed_messages() %}
+        <p style="color:#C62828; margin-top: 15px;">
+            {{ get_flashed_messages()[0] }}
+        </p>
+    {% endif %}
 </form>
-<br><a href="/dashboard">← Back to dashboard</a>
-</body>
-</html>
+
+{% endblock %}
