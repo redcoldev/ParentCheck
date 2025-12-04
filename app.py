@@ -9,10 +9,7 @@ from flask_login import (
     current_user, UserMixin
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from reportlab.platypus import SimpleDocTemplate
-from reportlab.lib.pagesizes import A4
 import psycopg
-import click
 
 
 # -------------------------------------------------
@@ -23,10 +20,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev")
 
 
 # -------------------------------------------------
-# DATABASE CONNECTION (LAZY — FIXES RENDER FAILURE)
+# LAZY DATABASE CONNECTION
 # -------------------------------------------------
 def get_db():
-    """Return a fresh DB connection + cursor each time."""
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set.")
@@ -38,50 +34,48 @@ def get_db():
 
 
 # -------------------------------------------------
-# DATABASE INITIALIZATION COMMAND
+# DATABASE INITIALIZATION
 # -------------------------------------------------
 def init_db():
-    conn, cur = get_db()
-    print("Initializing database tables...")
+    """Creates tables if they do not exist."""
+    try:
+        conn, cur = get_db()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            school_name VARCHAR(255) NOT NULL
-        );
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                school_name VARCHAR(255) NOT NULL
+            );
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS batches (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(id),
-            filename VARCHAR(255) NOT NULL,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS batches (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                filename VARCHAR(255) NOT NULL,
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS results (
-            id SERIAL PRIMARY KEY,
-            batch_id INTEGER REFERENCES batches(id),
-            first_name VARCHAR(255) NOT NULL,
-            last_name VARCHAR(255) NOT NULL,
-            dob VARCHAR(255),
-            country_of_citizenship VARCHAR(255),
-            risk_level VARCHAR(20) NOT NULL,
-            match_data JSONB
-        );
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS results (
+                id SERIAL PRIMARY KEY,
+                batch_id INTEGER REFERENCES batches(id),
+                first_name VARCHAR(255) NOT NULL,
+                last_name VARCHAR(255) NOT NULL,
+                dob VARCHAR(255),
+                country_of_citizenship VARCHAR(255),
+                risk_level VARCHAR(20) NOT NULL,
+                match_data JSONB
+            );
+        """)
 
-    print("DB initialized.")
+        print("Database initialized successfully.")
 
-
-@app.cli.command("init-db")
-def init_db_command():
-    init_db()
-    click.echo("Database initialized successfully.")
+    except Exception as e:
+        print("Database initialization error:", e)
 
 
 # -------------------------------------------------
@@ -99,10 +93,13 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    conn, cur = get_db()
-    cur.execute("SELECT id, school_name FROM users WHERE id=%s", (user_id,))
-    row = cur.fetchone()
-    return User(*row) if row else None
+    try:
+        conn, cur = get_db()
+        cur.execute("SELECT id, school_name FROM users WHERE id=%s", (user_id,))
+        row = cur.fetchone()
+        return User(*row) if row else None
+    except Exception:
+        return None
 
 
 # -------------------------------------------------
@@ -132,9 +129,9 @@ def login():
     return render_template("login.html")
 
 
-# -------------------------------------------------
+# -------------------------------
 # ADMIN-ONLY REGISTRATION
-# -------------------------------------------------
+# -------------------------------
 @app.route("/admin/register", methods=["GET", "POST"])
 def admin_register():
     if request.method == "POST":
@@ -151,7 +148,7 @@ def admin_register():
         hashed_pw = generate_password_hash(pw)
         cur.execute(
             "INSERT INTO users (email, password, school_name) VALUES (%s, %s, %s)",
-            (email, hashed_pw, school_name),
+            (email, hashed_pw, school_name)
         )
 
         flash("School account created.")
@@ -191,7 +188,7 @@ def upload():
         conn, cur = get_db()
         cur.execute(
             "INSERT INTO batches (user_id, filename) VALUES (%s, %s) RETURNING id",
-            (current_user.id, f.filename),
+            (current_user.id, f.filename)
         )
         batch_id = cur.fetchone()[0]
 
@@ -203,7 +200,7 @@ def upload():
 
 
 # -------------------------------------------------
-# MATCH PROCESSING
+# PROCESS BATCH
 # -------------------------------------------------
 def process_batch(batch_id, rows):
     key = os.environ.get("OPEN_SANCTIONS_KEY", "")
@@ -224,7 +221,6 @@ def process_batch(batch_id, rows):
             }
         }
 
-        # optional fields
         if row.get("dob"):
             payload["queries"]["q1"]["properties"]["birthDate"] = [str(row["dob"])]
         if row.get("country_of_citizenship"):
@@ -239,7 +235,6 @@ def process_batch(batch_id, rows):
                 headers=headers,
                 timeout=10
             )
-            r.raise_for_status()
             data = r.json()
         except Exception:
             data = {}
@@ -253,7 +248,6 @@ def process_batch(batch_id, rows):
             names = [entity.get("caption", "")] + [
                 a.get("value", "") for a in entity.get("properties", {}).get("alias", [])
             ]
-
             full = f"{row['first_name']} {row['last_name']}".lower()
             if any(full in n.lower() for n in names if n):
                 match = json.dumps(data)
@@ -276,7 +270,7 @@ def process_batch(batch_id, rows):
 
 
 # -------------------------------------------------
-# RESULTS DISPLAY + XLSX EXPORT
+# RESULTS VIEW
 # -------------------------------------------------
 @app.route("/results/<int:batch_id>")
 @login_required
@@ -296,7 +290,7 @@ def results(batch_id):
         flash("Batch not found or unauthorized.")
         return redirect("/dashboard")
 
-    # Export entire batch as XLSX
+    # XLSX export
     if request.args.get("xlsx"):
         from openpyxl import Workbook
         wb = Workbook()
@@ -335,8 +329,17 @@ def logout():
 
 
 # -------------------------------------------------
+# AUTO DB INITIALIZATION ON SERVER START
+# -------------------------------------------------
+try:
+    init_db()
+except Exception as e:
+    print("Deferred DB init error:", e)
+
+
+# -------------------------------------------------
 # DEV MODE
 # -------------------------------------------------
 if __name__ == "__main__":
-    init_db()   # only runs locally
+    init_db()
     app.run(debug=True)
