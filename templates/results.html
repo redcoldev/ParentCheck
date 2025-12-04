@@ -1,27 +1,47 @@
-<!DOCTYPE html>
-<html>
-<head><title>Results - ParentCheck+</title></head>
-<body style="font-family:Arial;margin:40px">
+{% extends "base.html" %}
+{% block content %}
+
 <h1>Batch Results</h1>
 
-<table border="1" cellpadding="8" cellspacing="0">
-  <tr style="background:#f0f0f0">
-    <th>Name</th><th>DOB</th><th>Citizenship</th><th>Risk</th>
-  </tr>
-  {% for r in rows %}
-  <tr {% if r[6] != 'Clear' %}style="background:#ffeeee"{% endif %}>
-    <td>{{ r[2] }} {{ r[3] }}</td>
-    <td>{{ r[4] or '' }}</td>
-    <td>{{ r[5] or '' }}</td>
-    <td><strong>{{ r[6] }}</strong></td>
-  </tr>
-  {% endfor %}
+<div class="inline-buttons">
+    <a href="/results/{{ batch_id }}?xlsx=1">
+        <button class="btn-primary">Download XLSX</button>
+    </a>
+    <a href="/dashboard"><button class="btn-secondary">Back</button></a>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>First</th>
+            <th>Last</th>
+            <th>DOB</th>
+            <th>Country</th>
+            <th>Risk</th>
+        </tr>
+    </thead>
+    <tbody>
+
+        {% for r in rows %}
+        <tr>
+            <td>{{ r[0] }}</td>
+            <td>{{ r[1] }}</td>
+            <td>{{ r[2] }}</td>
+            <td>{{ r[3] }}</td>
+
+            <td>
+                {% if r[4] == "Clear" %}
+                    <span class="badge-clear">Clear</span>
+                {% elif r[4] == "Review" %}
+                    <span class="badge-review">Review</span>
+                {% else %}
+                    <span class="badge-high">High</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+
+    </tbody>
 </table>
 
-<br>
-<a href="/results/{{ batch_id }}?xlsx=1">Download XLSX</a>
-
-<br><br>
-<a href="/dashboard">← Back to dashboard</a>
-</body>
-</html>
+{% endblock %}
