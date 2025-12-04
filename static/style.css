@@ -1,0 +1,213 @@
+/* ===========================
+   FONT IMPORT
+=========================== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+
+/* ===========================
+   GLOBAL STYLE
+=========================== */
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: #FAF8F4;  /* soft beige */
+    color: #555557;        /* ParentCheck dark grey */
+}
+
+h1, h2, h3 {
+    font-weight: 700;
+    color: #555557;
+    margin-bottom: 18px;
+}
+
+p, label {
+    color: #7A7A7A; /* softer grey */
+    font-size: 15px;
+}
+
+
+/* ===========================
+   LAYOUT
+=========================== */
+.page-container {
+    max-width: 720px;
+    margin: 40px auto;
+    background: #FFFFFF;
+    padding: 40px 48px;
+    border-radius: 14px;
+    border: 1px solid #E4E1DA;
+}
+
+
+/* ===========================
+   LOGO HEADER
+=========================== */
+.header {
+    text-align: center;
+    margin: 30px 0 20px 0;
+}
+
+.header img {
+    height: 60px;
+}
+
+
+/* ===========================
+   INPUTS
+=========================== */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="number"],
+select {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #D6D2CB;
+    background: #FFFFFF;
+    font-size: 15px;
+    margin-top: 6px;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: #00A7C4; /* ParentCheck turquoise */
+    box-shadow: 0 0 0 2px rgba(0, 167, 196, 0.25);
+}
+
+
+/* ===========================
+   BUTTONS
+=========================== */
+.btn-primary {
+    background: #00A7C4;
+    color: white;
+    padding: 14px 28px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 40px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 20px;
+}
+
+.btn-primary:hover {
+    background: #0092AD;
+}
+
+.btn-secondary {
+    background: #EAE7E2;
+    color: #555557;
+    padding: 14px 28px;
+    border: none;
+    border-radius: 40px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.btn-secondary:hover {
+    background: #DFDBD4;
+}
+
+/* Inline buttons */
+.inline-buttons {
+    margin-top: 25px;
+    display: flex;
+    gap: 12px;
+}
+
+
+/* ===========================
+   CARD ELEMENTS
+=========================== */
+.card {
+    background: #FFFFFF;
+    border: 1px solid #E4E1DA;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Risk Labels */
+.badge-clear {
+    background: #E5F7EA;
+    color: #2E7D32;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-review {
+    background: #FFF9E5;
+    color: #B88600;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-high {
+    background: #FCE8E6;
+    color: #C62828;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+
+/* ===========================
+   TABLES
+=========================== */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 25px;
+}
+
+table th {
+    text-align: left;
+    padding: 12px 10px;
+    font-weight: 600;
+    color: #555557;
+}
+
+table td {
+    padding: 12px 10px;
+    border-top: 1px solid #E4E1DA;
+}
+
+tr:nth-child(odd) {
+    background: #FCFAF7;
+}
+
+
+/* ===========================
+   FORMS (Marshmallow style)
+=========================== */
+.form-group {
+    margin-bottom: 24px;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+
+/* ===========================
+   LINKS
+=========================== */
+a {
+    color: #00A7C4;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
