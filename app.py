@@ -239,79 +239,92 @@ def processing(batch_id):
 
 def process_batch(batch_id, rows):
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+    headers = {
+        "Authorization": f"Apikey {API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    results = []
-    headers = {"Authorization": f"Apikey {API_KEY}"}
+    results_to_store = []
 
-    for r in rows:
-        # Build the search query using only name fields
-        full_name = f"{r['first_name']} {r['last_name']}"
-        url = f"https://api.opensanctions.org/api/search?q={full_name}"
+    for idx, r in enumerate(rows):
+        query_id = f"row{idx}"
 
+        # Build OS entity-style query
+        properties = {
+            "firstName": [r["first_name"]],
+            "lastName": [r["last_name"]],
+        }
+
+        # Optional fields improve accuracy
+        if r.get("dob"):
+            properties["birthDate"] = [r["dob"]]
+
+        if r.get("citizenship"):
+            properties["country"] = [r["citizenship"]]
+
+        payload = {
+            "queries": {
+                query_id: {
+                    "schema": "Person",
+                    "properties": properties
+                }
+            }
+        }
+
+        # Call OpenSanctions
         try:
-            resp = requests.get(url, headers=headers)
-            data = resp.json()
-            hits = data.get("results", [])
+            resp = requests.post(
+                "https://api.opensanctions.org/match/default",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            match_data = resp.json()
         except Exception as e:
-            print("OS ERROR:", e)
-            hits = []
+            match_data = {"error": str(e)}
 
-        matched_entities = []
+        # Extract final match score + classification
+        response_entry = match_data.get("responses", {}).get(query_id, {})
+        match_results = response_entry.get("results", [])
 
-        # Apply your exact-match rules
-        for h in hits:
-            entity = h.get("entity", {})
+        if match_results:
+            best = match_results[0]
+            score = best.get("score", 0)
+        else:
+            best = None
+            score = 0
 
-            # 1. NAME FILTER
-            name_ok = False
-            for name in entity.get("names", []):
-                if name.lower() == full_name.lower():
-                    name_ok = True
-                    break
-            if not name_ok:
-                continue
+        # Assign RISK based on score
+        if not best:
+            risk = "Clear"
+        elif score >= 0.85:
+            risk = "High"
+        elif score >= 0.60:
+            risk = "Review"
+        else:
+            risk = "Clear"
 
-            # 2. CITIZENSHIP FILTER (optional)
-            if r.get("citizenship"):
-                citizenships = entity.get("nationalities", [])
-                if r["citizenship"].lower() not in [c.lower() for c in citizenships]:
-                    continue
-
-            # 3. DOB FILTER (optional)
-            if r.get("dob"):
-                dobs = entity.get("dates_of_birth", [])
-                if r["dob"] not in dobs:
-                    continue
-
-            # Passed all filters = a match
-            matched_entities.append(entity)
-
-        # Final stored result
-        results.append({
-            "first_name": r["first_name"],
-            "last_name": r["last_name"],
-            "citizenship": r.get("citizenship", ""),
-            "dob": r.get("dob", ""),
-            "matches": matched_entities
-        })
-
-    # Save into DB
-    conn, cur = get_db()
-    for res in results:
-        cur.execute("""
-            INSERT INTO results (batch_id, first_name, last_name, citizenship, dob, raw_json)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (batch_id,
-              res["first_name"],
-              res["last_name"],
-              res["citizenship"],
-              res["dob"],
-              res["matches"]
+        # Store result row
+        results_to_store.append((
+            batch_id,
+            r["first_name"],
+            r["last_name"],
+            r.get("citizenship", None),
+            r.get("dob", None),
+            risk,
+            json.dumps(match_data)  # store full API response
         ))
+
+    # Save into database
+    conn, cur = get_db()
+    for res in results_to_store:
+        cur.execute("""
+            INSERT INTO results (batch_id, first_name, last_name, citizenship, dob, risk_level, raw_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, res)
     conn.commit()
     cur.close()
     conn.close()
-
 
 
 
