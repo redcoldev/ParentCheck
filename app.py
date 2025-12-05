@@ -74,68 +74,50 @@ def get_db():
 # =====================================================================
 
 def init_db():
-    conn, cur = get_db()
+    conn = psycopg.connect(DB_URL)
+    cur = conn.cursor()
 
+    # USERS TABLE
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            school_name TEXT,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            school_name VARCHAR(255),
             is_admin BOOLEAN DEFAULT FALSE
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS batches (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(id),
-            filename TEXT NOT NULL,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            preview_data JSONB,
-            total_rows INTEGER
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS results (
-            id SERIAL PRIMARY KEY,
-            batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
-            first_name TEXT,
-            last_name TEXT,
-            citizenship TEXT,
-            dob TEXT,
-            raw_json JSONB
-        )
+        );
     """)
 
     conn.commit()
     cur.close()
     conn.close()
+    print("Database OK")
 
 
-# =====================================================================
-#   CREATE TEST ADMIN (SAFE)
-# =====================================================================
 
 def create_test_user():
-    TEST_EMAIL = "admin@example.com"
-    TEST_PASS = "password123"
-    TEST_SCHOOL = "Test School"
+    """Create admin@example.com only if it does NOT already exist."""
+    conn = psycopg.connect(DB_URL)
+    cur = conn.cursor()
 
-    conn, cur = get_db()
+    email = "admin@example.com"
+    password = "password123"
+    school = "Test School"
 
-    cur.execute("SELECT id FROM users WHERE email=%s", (TEST_EMAIL,))
-    if not cur.fetchone():
-        cur.execute("""
-            INSERT INTO users (email, password, school_name, is_admin)
-            VALUES (%s, %s, %s, TRUE)
-        """, (TEST_EMAIL, TEST_PASS, TEST_SCHOOL))
-        conn.commit()
-        print(">>> Test user created")
+    # insert only if NOT exists
+    cur.execute("""
+        INSERT INTO users (email, password, school_name, is_admin)
+        SELECT %s, %s, %s, TRUE
+        WHERE NOT EXISTS (
+            SELECT 1 FROM users WHERE email=%s
+        );
+    """, (email, password, school, email))
 
+    conn.commit()
     cur.close()
     conn.close()
+    print("Test admin ensured")
+
 
 
 # =====================================================================
