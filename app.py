@@ -170,6 +170,58 @@ def normalise_rows(rows):
 #   ROUTES
 # =====================================================================
 
+
+
+
+
+
+
+
+@app.route("/_patch_users_table")
+def patch_users_table():
+    try:
+        conn = psycopg.connect(DB_URL)
+        cur = conn.cursor()
+
+        # Try adding missing column, ignore if already exists
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'is_admin'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
+        """)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return "Users table patched successfully."
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @app.route("/")
 def index():
     if not current_user.is_authenticated:
