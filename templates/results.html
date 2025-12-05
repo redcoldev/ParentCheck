@@ -23,16 +23,36 @@
     <tbody>
 
         {% for r in rows %}
+        {% set first = r[0] %}
+        {% set last = r[1] %}
+        {% set country = r[2] %}
+        {% set dob = r[3] %}
+        {% set js = r[4] %}
+
+        {# Determine risk level from JSON #}
+        {% if js.results and js.results[0].score %}
+            {% set score = js.results[0].score %}
+            {% if score > 0.75 %}
+                {% set risk = "High" %}
+            {% elif score > 0.40 %}
+                {% set risk = "Review" %}
+            {% else %}
+                {% set risk = "Clear" %}
+            {% endif %}
+        {% else %}
+            {% set risk = "Clear" %}
+        {% endif %}
+
         <tr>
-            <td>{{ r[0] }}</td>
-            <td>{{ r[1] }}</td>
-            <td>{{ r[2] }}</td>
-            <td>{{ r[3] }}</td>
+            <td>{{ first }}</td>
+            <td>{{ last }}</td>
+            <td>{{ dob }}</td>
+            <td>{{ country }}</td>
 
             <td>
-                {% if r[4] == "Clear" %}
+                {% if risk == "Clear" %}
                     <span class="badge-clear">Clear</span>
-                {% elif r[4] == "Review" %}
+                {% elif risk == "Review" %}
                     <span class="badge-review">Review</span>
                 {% else %}
                     <span class="badge-high">High</span>
