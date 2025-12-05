@@ -49,15 +49,15 @@
             <td>{{ dob }}</td>
             <td>{{ country }}</td>
 
-            <td>
-                {% if risk == "Clear" %}
-                    <span class="badge-clear">Clear</span>
-                {% elif risk == "Review" %}
-                    <span class="badge-review">Review</span>
-                {% else %}
-                    <span class="badge-high">High</span>
-                {% endif %}
-            </td>
+<td>
+    {% if r[6] == "Clear" %}
+        <span class="badge-clear">Clear</span>
+    {% elif r[6] == "Review" %}
+        <span class="badge-review">Review</span>
+    {% else %}
+        <span class="badge-high">High</span>
+    {% endif %}
+</td>
         </tr>
         {% endfor %}
 
