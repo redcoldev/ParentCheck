@@ -129,6 +129,29 @@ def login():
     return render_template("login.html")
 
 
+@app.route("/processing/<batch_id>")
+def processing(batch_id):
+    import json
+
+    # TODO: set this value based on the uploaded batch size
+    # For testing, just hardcode something like 200
+    current_batch_size = 200  
+
+    # 30–90 second artificial timing
+    delay = max(30, min(90, int(current_batch_size * 0.06)))
+
+    # LOAD THE SANCTIONS DATASET
+    from sanctions_dataset import SANCTIONS_DATA
+
+    return render_template(
+        "processing.html",
+        dataset_json=json.dumps(SANCTIONS_DATA),
+        delay_seconds=delay,
+        batch_id=batch_id
+    )
+
+
+
 # -------------------------------
 # ADMIN-ONLY REGISTRATION
 # -------------------------------
