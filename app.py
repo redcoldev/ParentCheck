@@ -152,23 +152,27 @@ def normalise_rows(rows):
 
 
 
-
-
-@app.route("/_patch_users_table")
-def patch_users_table():
+@app.route("/_patch_batches_table")
+def patch_batches_table():
     try:
         conn = psycopg.connect(DB_URL)
         cur = conn.cursor()
 
-        # Try adding missing column, ignore if already exists
         cur.execute("""
             DO $$
             BEGIN
                 IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'is_admin'
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='batches' AND column_name='preview_data'
                 ) THEN
-                    ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE batches ADD COLUMN preview_data JSONB;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='batches' AND column_name='total_rows'
+                ) THEN
+                    ALTER TABLE batches ADD COLUMN total_rows INTEGER;
                 END IF;
             END $$;
         """)
@@ -176,16 +180,10 @@ def patch_users_table():
         conn.commit()
         cur.close()
         conn.close()
-
-        return "Users table patched successfully."
+        return "Batches table patched successfully."
 
     except Exception as e:
         return f"Error: {e}"
-
-
-
-
-
 
 
 
