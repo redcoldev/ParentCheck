@@ -26,6 +26,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "changeme")
 
 DB_URL = os.environ.get("DATABASE_URL")
+OPEN_SANCTIONS_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+
 if not DB_URL:
     raise RuntimeError("DATABASE_URL missing")
 DB_URL = DB_URL.replace("postgres://", "postgresql://")
@@ -238,15 +240,41 @@ def processing(batch_id):
 def process_batch(batch_id, rows):
     results = []
 
+    # Read API key from environment
+    API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+
+    headers = {
+        "Authorization": f"Apikey {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     for r in rows:
-        payload = {"queries": [{"string": f"{r['first_name']} {r['last_name']}"}]}
+        payload = {
+            "queries": [
+                {"query": f"{r['first_name']} {r['last_name']}"}
+            ]
+        }
+
         try:
-            resp = requests.post("https://api.opensanctions.org/match/default", json=payload)
+            resp = requests.post(
+                "https://api.opensanctions.org/api/match",
+                headers=headers,
+                json=payload
+            )
             data = resp.json()
-        except:
+            print("OpenSanctions API response:", data)  # Debug
+        except Exception as e:
+            print("OpenSanctions ERROR:", e)
             data = {"error": True}
 
-        results.append((r["first_name"], r["last_name"], r["citizenship"], r["dob"], json.dumps(data)))
+        # Store the JSON object directly (psycopg will convert it to JSONB)
+        results.append((
+            r["first_name"],
+            r["last_name"],
+            r["citizenship"],
+            r["dob"],
+            data
+        ))
 
     conn, cur = get_db()
     for res in results:
@@ -257,6 +285,7 @@ def process_batch(batch_id, rows):
     conn.commit()
     cur.close()
     conn.close()
+
 
 
 @app.route("/finish/<int:batch_id>")
