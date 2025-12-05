@@ -489,12 +489,23 @@ def init_db_command():
     print("Database initialized.")
 
 
+
+
 # =====================================================================
-#   RUN
+#   INIT ON STARTUP (SAFE FOR RENDER/GUNICORN)
 # =====================================================================
 
-init_db()
-create_test_user()
+with app.app_context():
+    try:
+        init_db()
+        create_test_user()
+        print("Startup init completed.")
+    except Exception as e:
+        print("Startup init error:", e)
 
+
+# =====================================================================
+#   RUN LOCAL ONLY
+# =====================================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
