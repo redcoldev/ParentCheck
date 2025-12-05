@@ -238,17 +238,21 @@ def processing(batch_id):
 
 
 def process_batch(batch_id, rows):
-    results = []
+    print("DEBUG: process_batch CALLED with", len(rows), "rows")
 
-    # Read API key from environment
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+    print("DEBUG: API KEY PRESENT?", API_KEY is not None)
 
     headers = {
         "Authorization": f"Apikey {API_KEY}",
         "Content-Type": "application/json"
     }
 
+    results = []
+
     for r in rows:
+        print("DEBUG: Processing row:", r)
+
         payload = {
             "queries": [
                 {"query": f"{r['first_name']} {r['last_name']}"}
@@ -261,13 +265,12 @@ def process_batch(batch_id, rows):
                 headers=headers,
                 json=payload
             )
+            print("DEBUG: API RESPONSE", resp.status_code, resp.text)
             data = resp.json()
-            print("OpenSanctions API response:", data)  # Debug
         except Exception as e:
-            print("OpenSanctions ERROR:", e)
+            print("DEBUG: API ERROR", e)
             data = {"error": True}
 
-        # Store the JSON object directly (psycopg will convert it to JSONB)
         results.append((
             r["first_name"],
             r["last_name"],
@@ -275,6 +278,8 @@ def process_batch(batch_id, rows):
             r["dob"],
             data
         ))
+
+    print("DEBUG: FINISHED PROCESSING, inserting into DB…")
 
     conn, cur = get_db()
     for res in results:
@@ -285,6 +290,9 @@ def process_batch(batch_id, rows):
     conn.commit()
     cur.close()
     conn.close()
+
+    print("DEBUG: INSERT COMPLETE")
+
 
 
 
