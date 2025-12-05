@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Preview (First 10 Rows)</h1>
+
+<p><strong>Filename:</strong> {{ filename }}</p>
+<p><strong>Total Rows:</strong> {{ total }}</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>First</th>
+            <th>Last</th>
+            <th>Citizenship</th>
+            <th>DOB</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in preview %}
+        <tr>
+            <td>{{ row.first_name }}</td>
+            <td>{{ row.last_name }}</td>
+            <td>{{ row.citizenship }}</td>
+            <td>{{ row.dob }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="inline-buttons">
+    <a href="/processing/{{ batch_id }}">
+        <button class="btn-primary">Process Batch</button>
+    </a>
+    <a href="/upload">
+        <button class="btn-secondary">Back</button>
+    </a>
+</div>
+
+{% endblock %}
