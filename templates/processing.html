@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Running Screening…</title>
+<style>
+    body {
+        font-family: Inter, sans-serif;
+        background: #F7F5F0;
+        margin: 0;
+        padding: 0;
+        text-align: center;
+    }
+
+    h1 {
+        margin-top: 40px;
+        font-size: 28px;
+        color: #333;
+        font-weight: 600;
+    }
+
+    .reels {
+        display: flex;
+        justify-content: center;
+        margin-top: 40px;
+        gap: 20px;
+    }
+
+    .column {
+        width: 320px;
+        height: 260px;
+        overflow: hidden;
+        border-radius: 10px;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+    }
+
+    .col1 { background: #EDE8DD; }
+    .col2 { background: #FFFFFF; }
+
+    .inner {
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.4s ease-out;
+    }
+
+    .item {
+        padding: 14px;
+        font-size: 16px;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        color: #222;
+    }
+
+    #status {
+        margin-top: 40px;
+        font-size: 18px;
+        color: #444;
+    }
+</style>
+</head>
+<body>
+
+<h1>Running Enhanced Screening…</h1>
+
+<div class="reels">
+    <div class="column col1">
+        <div id="col1Inner" class="inner"></div>
+    </div>
+
+    <div class="column col2">
+        <div id="col2Inner" class="inner"></div>
+    </div>
+</div>
+
+<div id="status">Please wait…</div>
+
+<script>
+    const dataset = {{ dataset_json | safe }};
+    const processingTime = {{ delay_seconds }};
+    
+    const col1 = document.getElementById("col1Inner");
+    const col2 = document.getElementById("col2Inner");
+
+    let countries = Object.keys(dataset);
+    let currentIndex = 0;
+    let elapsed = 0;
+
+    function fillColumn(col, list) {
+        col.innerHTML = "";
+        list.forEach(item => {
+            let div = document.createElement("div");
+            div.className = "item";
+            div.innerText = item;
+            col.appendChild(div);
+        });
+    }
+
+    function scrollColumn(col, step) {
+        col.style.transform = `translateY(-${step * 40}px)`;
+    }
+
+    fillColumn(col1, countries);
+
+    function startScrolling() {
+        if (currentIndex >= countries.length) currentIndex = 0;
+
+        let country = countries[currentIndex];
+        let items = dataset[country];
+
+        fillColumn(col2, items);
+
+        scrollColumn(col1, currentIndex);
+
+        let itemIndex = 0;
+        let itemInterval = setInterval(() => {
+            scrollColumn(col2, itemIndex);
+            itemIndex++;
+
+            if (itemIndex >= items.length) {
+                clearInterval(itemInterval);
+                currentIndex++;
+                setTimeout(startScrolling, 600);
+            }
+        }, 250);
+    }
+
+    startScrolling();
+
+    setTimeout(() => {
+        document.getElementById("status").innerText = "Scan complete. Redirecting…";
+        window.location.href = "/results/{{ batch_id }}";
+    }, processingTime * 1000);
+</script>
+
+</body>
+</html>
