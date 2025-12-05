@@ -213,7 +213,8 @@ def preview(batch_id):
     return render_template(
         "preview.html",
         filename=filename,
-        preview=json.loads(preview_data),
+      preview=preview_data,
+
         total=total,
         batch_id=batch_id
     )
