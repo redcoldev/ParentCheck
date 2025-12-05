@@ -227,7 +227,7 @@ def preview(batch_id):
 def processing(batch_id):
     rows = session.get(f"batch_{batch_id}_rows", [])
     total = len(rows)
-    delay = max(30, min(90, int(total * 0.06)))
+    delay = 8
 
     return render_template(
         "processing.html",
