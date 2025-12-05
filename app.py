@@ -43,9 +43,9 @@ login_manager.login_view = "login"
 
 
 class User(UserMixin):
-    def __init__(self, id_, username, password_hash, is_admin):
+    def __init__(self, id_, email, password_hash, is_admin):
         self.id = id_
-        self.username = username
+        self.email = email
         self.password_hash = password_hash
         self.is_admin = is_admin
 
@@ -54,14 +54,23 @@ class User(UserMixin):
 def load_user(user_id):
     conn = psycopg.connect(DB_URL)
     cur = conn.cursor()
-    cur.execute("SELECT id, username, password_hash, is_admin FROM users WHERE id=%s", (user_id,))
+
+    # Use email instead of username (your DB schema)
+    cur.execute(
+        "SELECT id, email, password_hash, is_admin FROM users WHERE id=%s",
+        (user_id,),
+    )
+
     row = cur.fetchone()
+
     cur.close()
     conn.close()
 
     if row:
         return User(*row)
+
     return None
+
 
 
 # =====================================================================
@@ -151,30 +160,36 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "").strip()
 
         conn, cur = get_db()
-        cur.execute("SELECT id, username, password_hash, is_admin FROM users WHERE username=%s", (username,))
-        row = cur.fetchone()
+        cur.execute("SELECT id, email, password_hash, is_admin FROM users WHERE email=%s", (email,))
+        user = cur.fetchone()
 
-        if not row:
-            flash("Invalid login")
-            return render_template("login.html")
+        if not user:
+            flash("Invalid email or password.", "danger")
+            return redirect("/login")
 
-        uid, usern, pw_hash, is_admin = row
-        if bcrypt.checkpw(password.encode(), pw_hash.encode()):
-            login_user(User(uid, usern, pw_hash, is_admin))
-            return redirect(url_for("dashboard"))
+        user_id, user_email, stored_hash, is_admin = user
 
-        flash("Invalid login")
+        if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
+            flash("Invalid email or password.", "danger")
+            return redirect("/login")
+
+        # User object
+        class U(UserMixin):
+            pass
+
+        u = U()
+        u.id = user_id
+        u.email = user_email
+        u.is_admin = is_admin
+
+        login_user(u)
+        return redirect("/")
     return render_template("login.html")
 
-
-@app.route("/logout")
-def logout():
-    logout_user()
-    return redirect(url_for("login"))
 
 
 # =====================================================================
