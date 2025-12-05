@@ -366,6 +366,26 @@ def process_batch(batch_id, rows):
     conn.close()
 
 
+
+@app.route("/debug-users")
+def debug_users():
+    conn = psycopg.connect(DB_URL)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='users';
+    """)
+    cols = cur.fetchall()
+    cur.close()
+    conn.close()
+    return "<br>".join([c[0] for c in cols])
+
+
+
+
+
+
 # =====================================================================
 #   ROUTE: AFTER PROCESSING — RUN MATCH + REDIRECT
 # =====================================================================
