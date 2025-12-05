@@ -338,18 +338,20 @@ def finish(batch_id):
 
 
 @app.route("/results/<int:batch_id>")
-@login_required
 def results(batch_id):
     conn, cur = get_db()
     cur.execute("""
-        SELECT first_name,last_name,citizenship,dob,raw_json
-        FROM results WHERE batch_id=%s
+        SELECT first_name, last_name, dob, citizenship, risk_level
+        FROM results
+        WHERE batch_id = %s
+        ORDER BY id ASC
     """, (batch_id,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
 
     return render_template("results.html", rows=rows, batch_id=batch_id)
+
 
 
 # =====================================================================
