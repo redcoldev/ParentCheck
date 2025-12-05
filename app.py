@@ -18,7 +18,6 @@ import requests
 
 from sanctions_dataset import SANCTIONS_DATA
 
-
 # =====================================================================
 #   FLASK CONFIG
 # =====================================================================
@@ -30,7 +29,6 @@ DB_URL = os.environ.get("DATABASE_URL")
 if not DB_URL:
     raise RuntimeError("DATABASE_URL missing")
 DB_URL = DB_URL.replace("postgres://", "postgresql://")
-
 
 # =====================================================================
 #   LOGIN
@@ -59,7 +57,6 @@ def load_user(user_id):
 
     return User(*row) if row else None
 
-
 # =====================================================================
 #   DB HELPERS
 # =====================================================================
@@ -67,35 +64,6 @@ def load_user(user_id):
 def get_db():
     conn = psycopg.connect(DB_URL)
     return conn, conn.cursor()
-
-
-# =====================================================================
-#   DB INIT (REAL ONE, NOT CLI)
-# =====================================================================
-
-def init_db():
-    conn = psycopg.connect(DB_URL)
-    cur = conn.cursor()
-
-    # USERS TABLE
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            school_name VARCHAR(255),
-            is_admin BOOLEAN DEFAULT FALSE
-        );
-    """)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("Database OK")
-
-
-
-
 
 # =====================================================================
 #   FILE LOADER (CSV + XLSX)
@@ -114,7 +82,6 @@ def load_uploaded_file(file):
         return [[str(c or "").strip() for c in row] for row in ws.iter_rows(values_only=True)]
 
     raise ValueError("Invalid file")
-
 
 # =====================================================================
 #   NORMALISE ROWS
@@ -142,60 +109,9 @@ def normalise_rows(rows):
 
     return clean
 
-
 # =====================================================================
 #   ROUTES
 # =====================================================================
-
-
-
-
-
-
-@app.route("/_patch_batches_table")
-def patch_batches_table():
-    try:
-        conn = psycopg.connect(DB_URL)
-        cur = conn.cursor()
-
-        cur.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='batches' AND column_name='preview_data'
-                ) THEN
-                    ALTER TABLE batches ADD COLUMN preview_data JSONB;
-                END IF;
-
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='batches' AND column_name='total_rows'
-                ) THEN
-                    ALTER TABLE batches ADD COLUMN total_rows INTEGER;
-                END IF;
-            END $$;
-        """)
-
-        conn.commit()
-        cur.close()
-        conn.close()
-        return "Batches table patched successfully."
-
-    except Exception as e:
-        return f"Error: {e}"
-
-
-
-
-
-
-
-
-
-
-
-
 
 @app.route("/")
 def index():
@@ -363,19 +279,6 @@ def results(batch_id):
     conn.close()
 
     return render_template("results.html", rows=rows, batch_id=batch_id)
-
-
-# =====================================================================
-#   STARTUP INIT (REQUIRED FOR RENDER)
-# =====================================================================
-
-with app.app_context():
-    try:
-        init_db()
-        create_test_user()
-        print("Startup OK")
-    except Exception as e:
-        print("Startup error:", e)
 
 
 # =====================================================================
