@@ -342,13 +342,11 @@ def process_batch(batch_id, rows):
             match_data = {"error": str(e)}
 
         os_results = match_data.get("responses", {}).get(query_id, {}).get("results", [])
-
-print("==== OPEN SANCTIONS RAW RESULTS ====")
-print(json.dumps(os_results, indent=2))
-print("====================================")
-
-
         
+        print("==== OPEN SANCTIONS RAW RESULTS ====")
+        print(json.dumps(os_results, indent=2))
+        print("====================================")
+
         # -------------------------------------------------------
         # APPLY STRICT MATCHING RULES
         # -------------------------------------------------------
