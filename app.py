@@ -244,18 +244,76 @@ def process_batch(batch_id, rows):
         "Content-Type": "application/json"
     }
 
+    def dob_matches(user_dob, os_birth_dates):
+        """DOB RULE:
+        - User always gives full DOB (DD/MM/YYYY or YYYY-MM-DD)
+        - OS may have: full DOB OR year-only
+        - Match if year matches AND:
+           * if OS has full DOB → full date must match exactly
+           * if OS has only year → accept
+        """
+
+        if not user_dob:
+            return True
+
+        # Extract user year/month/day from any format
+        digits = ''.join(ch for ch in user_dob if ch.isdigit())
+        if len(digits) != 8:
+            return False
+
+        user_day = digits[0:2]
+        user_month = digits[2:4]
+        user_year = digits[4:8]
+
+        for bd in os_birth_dates:
+            if not bd or len(bd) < 4:
+                continue
+
+            os_year = bd[:4]
+            os_month = bd[5:7] if len(bd) >= 7 else None
+            os_day = bd[8:10] if len(bd) >= 10 else None
+
+            # YEAR MUST MATCH
+            if os_year != user_year:
+                continue
+
+            os_has_full = (
+                os_month not in (None, "00") and
+                os_day not in (None, "00")
+            )
+
+            if not os_has_full:
+                # OS only has year → year match is enough
+                return True
+
+            # OS has full date → must match exactly
+            if os_day == user_day and os_month == user_month:
+                return True
+
+        return False
+
+    def matches_citizenship(user_country, props):
+        if not user_country:
+            return True
+
+        nat = props.get("nationality", []) + props.get("citizenship", [])
+        nat = [x.lower() for x in nat]
+
+        return user_country.lower() in nat
+
     results_to_store = []
 
+    # -------------------------------------------------------
+    # PROCESS EACH ROW
+    # -------------------------------------------------------
     for idx, r in enumerate(rows):
         query_id = f"row{idx}"
 
-        # Build OS entity-style query
         properties = {
             "firstName": [r["first_name"]],
-            "lastName": [r["last_name"]],
+            "lastName": [r["last_name"]]
         }
 
-        # Optional fields improve accuracy
         if r.get("dob"):
             properties["birthDate"] = [r["dob"]]
 
@@ -283,39 +341,46 @@ def process_batch(batch_id, rows):
         except Exception as e:
             match_data = {"error": str(e)}
 
-        # Extract final match score + classification
-        response_entry = match_data.get("responses", {}).get(query_id, {})
-        match_results = response_entry.get("results", [])
+        os_results = match_data.get("responses", {}).get(query_id, {}).get("results", [])
 
-        if match_results:
-            best = match_results[0]
-            score = best.get("score", 0)
-        else:
-            best = None
-            score = 0
+        # -------------------------------------------------------
+        # APPLY STRICT MATCHING RULES
+        # -------------------------------------------------------
+        true_matches = []
 
-        # Assign RISK based on score
-        if not best:
-            risk = "Clear"
-        elif score >= 0.85:
-            risk = "High"
-        elif score >= 0.60:
-            risk = "Review"
-        else:
-            risk = "Clear"
+        for m in os_results:
+            score = m.get("score", 0)
+            if score < 0.75:
+                continue
 
-        # Store result row
+            props = m.get("properties", {})
+
+            # citizenship rule
+            if not matches_citizenship(r.get("citizenship"), props):
+                continue
+
+            # DOB rule
+            if not dob_matches(r.get("dob"), props.get("birthDate", [])):
+                continue
+
+            # Passed all filters → REAL MATCH
+            true_matches.append(m)
+
+        # RISK ASSESSMENT
+        risk = "High" if true_matches else "Clear"
+
+        # Store final result row
         results_to_store.append((
             batch_id,
             r["first_name"],
             r["last_name"],
-            r.get("citizenship", None),
-            r.get("dob", None),
+            r.get("citizenship"),
+            r.get("dob"),
             risk,
-            json.dumps(match_data)  # store full API response
+            json.dumps(true_matches)  # Only TRUE matches, not whole API JSON
         ))
 
-    # Save into database
+    # Save into DB
     conn, cur = get_db()
     for res in results_to_store:
         cur.execute("""
@@ -325,6 +390,7 @@ def process_batch(batch_id, rows):
     conn.commit()
     cur.close()
     conn.close()
+
 
 
 
