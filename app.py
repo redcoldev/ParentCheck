@@ -71,6 +71,28 @@ def load_user(user_id):
 
 
 
+def create_test_user():
+    conn, cur = get_db()
+
+    email = "EDIT_ME"
+    password = "EDIT_ME"
+    school = "EDIT_ME"
+
+    cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO users (email, password, school_name) VALUES (%s, %s, %s)",
+            (email, password, school)
+        )
+        print(">>> Test admin user created.")
+
+    cur.close()
+    conn.close()
+
+
+
+
+
 # =====================================================================
 #   DB HELPERS
 # =====================================================================
@@ -471,5 +493,9 @@ def init_db_command():
 #   RUN
 # =====================================================================
 
+init_db()
+create_test_user()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
