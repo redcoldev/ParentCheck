@@ -238,60 +238,80 @@ def processing(batch_id):
 
 
 def process_batch(batch_id, rows):
-    print("DEBUG: process_batch CALLED with", len(rows), "rows")
-
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
-    print("DEBUG: API KEY PRESENT?", API_KEY is not None)
-
-    headers = {
-        "Authorization": f"Apikey {API_KEY}",
-        "Content-Type": "application/json"
-    }
 
     results = []
+    headers = {"Authorization": f"Apikey {API_KEY}"}
 
     for r in rows:
-        print("DEBUG: Processing row:", r)
-
-        payload = {
-            "queries": [
-                {"query": f"{r['first_name']} {r['last_name']}"}
-            ]
-        }
+        # Build the search query using only name fields
+        full_name = f"{r['first_name']} {r['last_name']}"
+        url = f"https://api.opensanctions.org/api/search?q={full_name}"
 
         try:
-            resp = requests.post(
-                "https://api.opensanctions.org/api/match",
-                headers=headers,
-                json=payload
-            )
-            print("DEBUG: API RESPONSE", resp.status_code, resp.text)
+            resp = requests.get(url, headers=headers)
             data = resp.json()
+            hits = data.get("results", [])
         except Exception as e:
-            print("DEBUG: API ERROR", e)
-            data = {"error": True}
+            print("OS ERROR:", e)
+            hits = []
 
-        results.append((
-            r["first_name"],
-            r["last_name"],
-            r["citizenship"],
-            r["dob"],
-            data
-        ))
+        matched_entities = []
 
-    print("DEBUG: FINISHED PROCESSING, inserting into DB…")
+        # Apply your exact-match rules
+        for h in hits:
+            entity = h.get("entity", {})
 
+            # 1. NAME FILTER
+            name_ok = False
+            for name in entity.get("names", []):
+                if name.lower() == full_name.lower():
+                    name_ok = True
+                    break
+            if not name_ok:
+                continue
+
+            # 2. CITIZENSHIP FILTER (optional)
+            if r.get("citizenship"):
+                citizenships = entity.get("nationalities", [])
+                if r["citizenship"].lower() not in [c.lower() for c in citizenships]:
+                    continue
+
+            # 3. DOB FILTER (optional)
+            if r.get("dob"):
+                dobs = entity.get("dates_of_birth", [])
+                if r["dob"] not in dobs:
+                    continue
+
+            # Passed all filters = a match
+            matched_entities.append(entity)
+
+        # Final stored result
+        results.append({
+            "first_name": r["first_name"],
+            "last_name": r["last_name"],
+            "citizenship": r.get("citizenship", ""),
+            "dob": r.get("dob", ""),
+            "matches": matched_entities
+        })
+
+    # Save into DB
     conn, cur = get_db()
     for res in results:
         cur.execute("""
             INSERT INTO results (batch_id, first_name, last_name, citizenship, dob, raw_json)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (batch_id, *res))
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (batch_id,
+              res["first_name"],
+              res["last_name"],
+              res["citizenship"],
+              res["dob"],
+              res["matches"]
+        ))
     conn.commit()
     cur.close()
     conn.close()
 
-    print("DEBUG: INSERT COMPLETE")
 
 
 
