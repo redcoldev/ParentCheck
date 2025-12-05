@@ -95,29 +95,6 @@ def init_db():
 
 
 
-def create_test_user():
-    """Create admin@example.com only if it does NOT already exist."""
-    conn = psycopg.connect(DB_URL)
-    cur = conn.cursor()
-
-    email = "admin@example.com"
-    password = "password123"
-    school = "Test School"
-
-    # insert only if NOT exists
-    cur.execute("""
-        INSERT INTO users (email, password, school_name, is_admin)
-        SELECT %s, %s, %s, TRUE
-        WHERE NOT EXISTS (
-            SELECT 1 FROM users WHERE email=%s
-        );
-    """, (email, password, school, email))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("Test admin ensured")
-
 
 
 # =====================================================================
