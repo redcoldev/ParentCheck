@@ -55,6 +55,26 @@
         font-size: 18px;
         color: #444;
     }
+
+    /* Debug box */
+    #debugBox {
+        background: #fff;
+        border: 1px solid #ccc;
+        padding: 10px;
+        width: 90%;
+        margin: 30px auto;
+        text-align: left;
+        font-size: 14px;
+        max-height: 220px;
+        overflow-y: auto;
+        border-radius: 6px;
+        display: none;
+    }
+
+    #debugTitle {
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
 </style>
 </head>
 <body>
@@ -73,16 +93,43 @@
 
 <div id="status">Please wait…</div>
 
+<!-- Debug Output -->
+<div id="debugBox">
+    <div id="debugTitle">Debug Output</div>
+    <div id="debugContent">Waiting for backend…</div>
+</div>
+
 <script>
     const dataset = {{ dataset_json | safe }};
     const processingTime = {{ delay_seconds }};
-    
+    const batchId = {{ batch_id }};
+
     const col1 = document.getElementById("col1Inner");
     const col2 = document.getElementById("col2Inner");
 
+    // -------------------------------
+    // Debug updater
+    // -------------------------------
+    function updateDebug() {
+        fetch(`/processing_debug/${batchId}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById("debugBox").style.display = "block";
+                document.getElementById("debugContent").innerText = data.log || "(no output yet)";
+            })
+            .catch(e => {
+                document.getElementById("debugContent").innerText = "Error fetching debug logs.";
+            });
+    }
+
+    setInterval(updateDebug, 1200);
+
+    // -------------------------------
+    // Animation code (unchanged)
+    // -------------------------------
+
     let countries = Object.keys(dataset);
     let currentIndex = 0;
-    let elapsed = 0;
 
     function fillColumn(col, list) {
         col.innerHTML = "";
@@ -107,7 +154,6 @@
         let items = dataset[country];
 
         fillColumn(col2, items);
-
         scrollColumn(col1, currentIndex);
 
         let itemIndex = 0;
@@ -125,9 +171,13 @@
 
     startScrolling();
 
+    // -------------------------------
+    // Redirect after backend finishes
+    // -------------------------------
+
     setTimeout(() => {
         document.getElementById("status").innerText = "Scan complete. Redirecting…";
-        window.location.href = "/results/{{ batch_id }}";
+        window.location.href = `/results/${batchId}`;
     }, processingTime * 1000);
 </script>
 
