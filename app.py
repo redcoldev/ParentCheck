@@ -387,16 +387,15 @@ def api_screen():
         return False
 
     # Evaluate candidates
-for m in results:
-    score = m.get("score", 0)
-    props = m.get("properties", {})
+    for m in results:
+        score = m.get("score", 0)
+        props = m.get("properties", {})
 
-    datasets = m.get("datasets", [])
+        datasets = m.get("datasets", [])
 
-    # NEW: keep only real sanctions datasets
-    if not any(ds in SANCTION_DATASETS for ds in datasets):
-        continue
-
+        # Only accept true sanctions datasets
+        if not any(ds in SANCTION_DATASETS for ds in datasets):
+            continue
 
         debug.append({
             "aliases": props.get("alias", []),
@@ -425,12 +424,12 @@ for m in results:
             "debug": debug
         }
 
-        # Otherwise no match
-        return {
-            "risk": "Clear",
-            "summary": "No sanctions match.",
-            "debug": debug
-        }
+    # Otherwise no match
+    return {
+        "risk": "Clear",
+        "summary": "No sanctions match.",
+        "debug": debug
+    }
 
 
 
