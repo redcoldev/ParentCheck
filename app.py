@@ -16,6 +16,26 @@ from openpyxl import load_workbook
 import psycopg
 import requests
 
+
+
+SANCTION_DATASETS = {
+    "us_ofac_sdn",
+    "us_ofac_cons",
+    "eu_fsf",
+    "uk_hmt_sanctions",
+    "un_sc_sanctions",
+    "au_dfat_sanctions",
+    "ca_sema_sanctions",
+    "ua_sanctions",
+    "ru_ns_sanctions"
+}
+
+
+
+
+
+
+
 # =====================================================================
 # CONFIG
 # =====================================================================
@@ -367,9 +387,16 @@ def api_screen():
         return False
 
     # Evaluate candidates
-    for m in results:
-        score = m.get("score", 0)
-        props = m.get("properties", {})
+for m in results:
+    score = m.get("score", 0)
+    props = m.get("properties", {})
+
+    datasets = m.get("datasets", [])
+
+    # NEW: keep only real sanctions datasets
+    if not any(ds in SANCTION_DATASETS for ds in datasets):
+        continue
+
 
         debug.append({
             "aliases": props.get("alias", []),
