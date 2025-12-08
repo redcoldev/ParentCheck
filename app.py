@@ -425,12 +425,12 @@ for m in results:
             "debug": debug
         }
 
-    # Otherwise no match
-    return {
-        "risk": "Clear",
-        "summary": "No sanctions match.",
-        "debug": debug
-    }
+        # Otherwise no match
+        return {
+            "risk": "Clear",
+            "summary": "No sanctions match.",
+            "debug": debug
+        }
 
 
 
