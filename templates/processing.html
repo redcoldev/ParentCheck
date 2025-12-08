@@ -3,28 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <title>Screening…</title>
+
 <style>
     body {
-        font-family: Inter, sans-serif;
-        background: #fafafa;
-        padding: 20px;
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
+        padding: 10px 20px;
     }
-    h1 { margin-bottom: 20px; }
+
+    h1 {
+        margin: 0 0 10px 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+    }
+
     table {
         width: 100%;
         border-collapse: collapse;
         background: white;
+        font-size: 13px;
     }
+
     th, td {
-        border: 1px solid #ddd;
-        padding: 10px;
+        border: 1px solid #ccc;
+        padding: 6px 8px;
+        vertical-align: top;
     }
-    th { background: #eee; }
+
+    th {
+        background: #f0f0f0;
+        font-weight: 600;
+        text-align: left;
+    }
+
     .status {
-        font-weight: bold;
+        font-weight: 600;
     }
-    .clear { color: green; }
-    .match { color: #c00; }
+
+    .clear { color: #1a7f1a; }
+    .match { color: #b30000; }
+
+    tbody tr:nth-child(even) {
+        background: #fafafa;
+    }
 </style>
 </head>
 <body>
@@ -39,10 +61,10 @@
             <th>Country</th>
             <th>Status</th>
             <th>Summary</th>
+            <th>Details</th>
         </tr>
     </thead>
-    <tbody id="tableBody">
-    </tbody>
+    <tbody id="tableBody"></tbody>
 </table>
 
 <script>
@@ -52,23 +74,24 @@
 
     async function processNext() {
         if (index >= rows.length) {
-            return;
+            return; // finished
         }
 
         const row = rows[index];
 
-        // Create table row first
+        // --- Build initial row ---
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${row.first_name} ${row.last_name}</td>
             <td>${row.dob || ""}</td>
-            <td>${row.country || ""}</td>
+            <td>${row.country_of_citizenship || ""}</td>
             <td class="status" id="status-${index}">Checking…</td>
             <td id="summary-${index}">—</td>
+            <td id="details-${index}">—</td>
         `;
         document.getElementById("tableBody").appendChild(tr);
 
-        // Call backend to screen single record
+        // --- API call ---
         try {
             const resp = await fetch("/api/screen", {
                 method: "POST",
@@ -79,7 +102,9 @@
 
             const statusEl = document.getElementById(`status-${index}`);
             const summaryEl = document.getElementById(`summary-${index}`);
+            const detailsEl = document.getElementById(`details-${index}`);
 
+            // STATUS
             if (data.risk === "Clear") {
                 statusEl.textContent = "✓ Clear";
                 statusEl.classList.add("clear");
@@ -88,11 +113,45 @@
                 statusEl.classList.add("match");
             }
 
-            summaryEl.textContent = data.summary || "(no details)";
+            // SUMMARY
+            summaryEl.textContent = data.summary || "(no summary)";
+
+            // DETAILS BLOCK
+            const details = [];
+
+            if (data.datasets?.length > 0) {
+                details.push("<strong>Lists:</strong> " + data.datasets.join(", "));
+            }
+
+            if (data.aliases?.length > 0) {
+                details.push("<strong>Aliases:</strong> " + data.aliases.slice(0, 5).join(", "));
+            }
+
+            if (data.birth_date) {
+                details.push("<strong>Birth date:</strong> " + data.birth_date);
+            }
+
+            if (data.birth_place) {
+                details.push("<strong>Birthplace:</strong> " + data.birth_place);
+            }
+
+            if (data.topics?.length > 0) {
+                details.push("<strong>Topics:</strong> " + data.topics.join(", "));
+            }
+
+            if (data.profile) {
+                const short = data.profile.length > 150 
+                    ? data.profile.substring(0, 150) + "…" 
+                    : data.profile;
+                details.push("<strong>Profile:</strong> " + short);
+            }
+
+            detailsEl.innerHTML = details.length > 0 ? details.join("<br>") : "—";
 
         } catch (err) {
             document.getElementById(`status-${index}`).textContent = "❌ Error";
             document.getElementById(`summary-${index}`).textContent = err.toString();
+            document.getElementById(`details-${index}`).textContent = "—";
         }
 
         index++;
