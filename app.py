@@ -541,7 +541,7 @@ def process_batch(batch_id, rows):
         # Perform OS API request
         try:
             resp = requests.post(
-                "https://api.opensanctions.org/match/default",
+                "https://api.opensanctions.org/match/sanctions",
                 headers=headers,
                 json=payload,
                 timeout=12
