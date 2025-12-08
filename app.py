@@ -247,6 +247,18 @@ def preview(batch_id):
     )
 
 
+@app.route("/processing/<int:batch_id>")
+@login_required
+def processing(batch_id):
+    rows = session.get(f"batch_{batch_id}_rows", [])
+    return render_template(
+        "processing.html",
+        rows_json=json.dumps(rows),
+        batch_id=batch_id
+    )
+
+
+
 # =====================================================================
 # PROCESSING PAGE 
 # =====================================================================
