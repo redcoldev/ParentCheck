@@ -1,184 +1,105 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Running Screening…</title>
+<title>Screening…</title>
 <style>
     body {
         font-family: Inter, sans-serif;
-        background: #F7F5F0;
-        margin: 0;
-        padding: 0;
-        text-align: center;
+        background: #fafafa;
+        padding: 20px;
     }
-
-    h1 {
-        margin-top: 40px;
-        font-size: 28px;
-        color: #333;
-        font-weight: 600;
+    h1 { margin-bottom: 20px; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
     }
-
-    .reels {
-        display: flex;
-        justify-content: center;
-        margin-top: 40px;
-        gap: 20px;
-    }
-
-    .column {
-        width: 320px;
-        height: 260px;
-        overflow: hidden;
-        border-radius: 10px;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.15);
-    }
-
-    .col1 { background: #EDE8DD; }
-    .col2 { background: #FFFFFF; }
-
-    .inner {
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.4s ease-out;
-    }
-
-    .item {
-        padding: 14px;
-        font-size: 16px;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        color: #222;
-    }
-
-    #status {
-        margin-top: 40px;
-        font-size: 18px;
-        color: #444;
-    }
-
-    /* Debug box */
-    #debugBox {
-        background: #fff;
-        border: 1px solid #ccc;
+    th, td {
+        border: 1px solid #ddd;
         padding: 10px;
-        width: 90%;
-        margin: 30px auto;
-        text-align: left;
-        font-size: 14px;
-        max-height: 220px;
-        overflow-y: auto;
-        border-radius: 6px;
-        display: none;
     }
-
-    #debugTitle {
-        font-weight: 600;
-        margin-bottom: 8px;
+    th { background: #eee; }
+    .status {
+        font-weight: bold;
     }
+    .clear { color: green; }
+    .match { color: #c00; }
 </style>
 </head>
 <body>
 
-<h1>Running Enhanced Screening…</h1>
+<h1>Running Screening…</h1>
 
-<div class="reels">
-    <div class="column col1">
-        <div id="col1Inner" class="inner"></div>
-    </div>
-
-    <div class="column col2">
-        <div id="col2Inner" class="inner"></div>
-    </div>
-</div>
-
-<div id="status">Please wait…</div>
-
-<!-- Debug Output -->
-<div id="debugBox">
-    <div id="debugTitle">Debug Output</div>
-    <div id="debugContent">Waiting for backend…</div>
-</div>
+<table id="resultTable">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>DOB</th>
+            <th>Country</th>
+            <th>Status</th>
+            <th>Summary</th>
+        </tr>
+    </thead>
+    <tbody id="tableBody">
+    </tbody>
+</table>
 
 <script>
-    const dataset = {{ dataset_json | safe }};
-    const processingTime = {{ delay_seconds }};
+    const rows = {{ rows_json | safe }};
     const batchId = {{ batch_id }};
+    let index = 0;
 
-    const col1 = document.getElementById("col1Inner");
-    const col2 = document.getElementById("col2Inner");
+    async function processNext() {
+        if (index >= rows.length) {
+            return;
+        }
 
-    // -------------------------------
-    // Debug updater
-    // -------------------------------
-    function updateDebug() {
-        fetch(`/processing_debug/${batchId}`)
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById("debugBox").style.display = "block";
-                document.getElementById("debugContent").innerText = data.log || "(no output yet)";
-            })
-            .catch(e => {
-                document.getElementById("debugContent").innerText = "Error fetching debug logs.";
+        const row = rows[index];
+
+        // Create table row first
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${row.first_name} ${row.last_name}</td>
+            <td>${row.dob || ""}</td>
+            <td>${row.country || ""}</td>
+            <td class="status" id="status-${index}">Checking…</td>
+            <td id="summary-${index}">—</td>
+        `;
+        document.getElementById("tableBody").appendChild(tr);
+
+        // Call backend to screen single record
+        try {
+            const resp = await fetch("/api/screen", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(row)
             });
-    }
+            const data = await resp.json();
 
-    setInterval(updateDebug, 1200);
+            const statusEl = document.getElementById(`status-${index}`);
+            const summaryEl = document.getElementById(`summary-${index}`);
 
-    // -------------------------------
-    // Animation code (unchanged)
-    // -------------------------------
-
-    let countries = Object.keys(dataset);
-    let currentIndex = 0;
-
-    function fillColumn(col, list) {
-        col.innerHTML = "";
-        list.forEach(item => {
-            let div = document.createElement("div");
-            div.className = "item";
-            div.innerText = item;
-            col.appendChild(div);
-        });
-    }
-
-    function scrollColumn(col, step) {
-        col.style.transform = `translateY(-${step * 40}px)`;
-    }
-
-    fillColumn(col1, countries);
-
-    function startScrolling() {
-        if (currentIndex >= countries.length) currentIndex = 0;
-
-        let country = countries[currentIndex];
-        let items = dataset[country];
-
-        fillColumn(col2, items);
-        scrollColumn(col1, currentIndex);
-
-        let itemIndex = 0;
-        let itemInterval = setInterval(() => {
-            scrollColumn(col2, itemIndex);
-            itemIndex++;
-
-            if (itemIndex >= items.length) {
-                clearInterval(itemInterval);
-                currentIndex++;
-                setTimeout(startScrolling, 600);
+            if (data.risk === "Clear") {
+                statusEl.textContent = "✓ Clear";
+                statusEl.classList.add("clear");
+            } else {
+                statusEl.textContent = "⚠ Match";
+                statusEl.classList.add("match");
             }
-        }, 250);
+
+            summaryEl.textContent = data.summary || "(no details)";
+
+        } catch (err) {
+            document.getElementById(`status-${index}`).textContent = "❌ Error";
+            document.getElementById(`summary-${index}`).textContent = err.toString();
+        }
+
+        index++;
+        processNext();
     }
 
-    startScrolling();
-
-    // -------------------------------
-    // Redirect after backend finishes
-    // -------------------------------
-
-    setTimeout(() => {
-        document.getElementById("status").innerText = "Scan complete. Redirecting…";
-        window.location.href = `/results/${batchId}`;
-    }, processingTime * 1000);
+    processNext();
 </script>
 
 </body>
