@@ -268,6 +268,11 @@ def processing(batch_id):
 def api_screen():
     row = request.get_json()
 
+    first = row["first_name"].strip().lower()
+    last = row["last_name"].strip().lower()
+    dob = row.get("dob", "").strip()
+    country = row.get("country_of_citizenship", "").strip().lower()
+
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
     headers = {"Authorization": f"ApiKey {API_KEY}"}
 
@@ -278,8 +283,8 @@ def api_screen():
                 "properties": {
                     "firstName": [row["first_name"]],
                     "lastName": [row["last_name"]],
-                    "birthDate": [row.get("dob", "")],
-                    "country": [row.get("country_of_citizenship", "")]
+                    "birthDate": [dob] if dob else [],
+                    "country": [row["country_of_citizenship"]] if country else []
                 }
             }
         }
@@ -297,18 +302,50 @@ def api_screen():
     except Exception as e:
         return {"risk": "Error", "summary": str(e)}, 200
 
-    # choose best match
-    match = None
+    # STRICT FILTERING
     for m in results:
-        if m.get("score", 0) >= 0.75:
-            match = m
-            break
+        score = m.get("score", 0)
+        if score != 1.0:
+            continue  # MUST be exactly 1.0
 
-    if match:
-        summary = f"{match.get('caption','')} (score {match.get('score')})"
-        return {"risk": "High", "summary": summary}, 200
+        props = m.get("properties", {})
+        os_first = props.get("firstName", [""])[0].lower()
+        os_last = props.get("lastName", [""])[0].lower()
 
+        # First + Last name must match EXACTLY
+        if os_first != first:
+            continue
+        if os_last != last:
+            continue
+
+        # Citizenship check
+        os_nations = [n.lower() for n in props.get("nationality", []) + props.get("citizenship", [])]
+        if country:
+            if country not in os_nations:
+                continue  # mismatch = no match
+
+        # DOB check
+        if dob:
+            os_dobs = props.get("birthDate", [])
+            os_clean = []
+            for d in os_dobs:
+                d = d.replace("-", "").replace("/", "")
+                if len(d) == 8:
+                    os_clean.append(f"{d[6:8]}/{d[4:6]}/{d[0:4]}")  # convert YYYYMMDD to DD/MM/YYYY
+
+            if dob not in os_clean:
+                continue  # mismatch DOB
+
+        # If it passed ALL strict checks → MATCH
+        caption = m.get("caption", "")
+        return {
+            "risk": "High",
+            "summary": f"{caption} (score 1.0)"
+        }, 200
+
+    # No strict matches found
     return {"risk": "Clear", "summary": "No matches"}, 200
+
 
 
 
