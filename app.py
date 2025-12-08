@@ -16,10 +16,8 @@ from openpyxl import load_workbook
 import psycopg
 import requests
 
-from sanctions_dataset import SANCTIONS_DATA
-
 # =====================================================================
-#   FLASK CONFIG
+# CONFIG
 # =====================================================================
 
 app = Flask(__name__)
@@ -30,10 +28,12 @@ OPEN_SANCTIONS_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
 
 if not DB_URL:
     raise RuntimeError("DATABASE_URL missing")
+
 DB_URL = DB_URL.replace("postgres://", "postgresql://")
 
+
 # =====================================================================
-#   LOGIN
+# LOGIN
 # =====================================================================
 
 login_manager = LoginManager()
@@ -59,16 +59,18 @@ def load_user(user_id):
 
     return User(*row) if row else None
 
+
 # =====================================================================
-#   DB HELPERS
+# DB HELPERS
 # =====================================================================
 
 def get_db():
     conn = psycopg.connect(DB_URL)
     return conn, conn.cursor()
 
+
 # =====================================================================
-#   FILE LOADER (CSV + XLSX)
+# FILE LOADER (CSV + XLSX)
 # =====================================================================
 
 def load_uploaded_file(file):
@@ -85,34 +87,41 @@ def load_uploaded_file(file):
 
     raise ValueError("Invalid file")
 
+
 # =====================================================================
-#   NORMALISE ROWS
+# NORMALISE ROWS
+# Expecting: first_name, last_name, citizenship, dob
 # =====================================================================
 
 def normalise_rows(rows):
     if not rows:
         return []
 
+    # Remove header row if alphabetical values exist in row 0
     if any(ch.isalpha() for ch in "".join(rows[0])):
         rows = rows[1:]
 
+    # Remove completely empty rows
     rows = [r for r in rows if any(cell.strip() for cell in r)]
 
     clean = []
     for r in rows:
+        # pad row up to 4 columns
         while len(r) < 4:
             r.append("")
+
         clean.append({
             "first_name": r[0].strip(),
             "last_name": r[1].strip(),
-            "citizenship": r[2].strip(),
+            "country_of_citizenship": r[2].strip(),   # ✔ clean naming
             "dob": r[3].strip(),
         })
 
     return clean
 
+
 # =====================================================================
-#   ROUTES
+# ROUTES
 # =====================================================================
 
 @app.route("/")
@@ -125,11 +134,14 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email","").strip()
-        password = request.form.get("password","").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "").strip()
 
         conn, cur = get_db()
-        cur.execute("SELECT id, email, password, school_name FROM users WHERE email=%s", (email,))
+        cur.execute("""
+            SELECT id, email, password, school_name
+            FROM users WHERE email=%s
+        """, (email,))
         user = cur.fetchone()
         cur.close()
         conn.close()
@@ -154,15 +166,20 @@ def login():
 @login_required
 def dashboard():
     conn, cur = get_db()
-    cur.execute("SELECT id, filename, uploaded_at FROM batches WHERE user_id=%s ORDER BY uploaded_at DESC",
-                (current_user.id,))
+    cur.execute("""
+        SELECT id, filename, uploaded_at
+        FROM batches
+        WHERE user_id=%s
+        ORDER BY uploaded_at DESC
+    """, (current_user.id,))
     batches = cur.fetchall()
     cur.close()
     conn.close()
+
     return render_template("dashboard.html", batches=batches)
 
 
-@app.route("/upload", methods=["GET","POST"])
+@app.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():
     if request.method == "POST":
@@ -182,14 +199,20 @@ def upload():
         conn, cur = get_db()
         cur.execute("""
             INSERT INTO batches (user_id, filename, preview_data, total_rows)
-            VALUES (%s,%s,%s,%s)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (current_user.id, file.filename, json.dumps(rows_clean[:10]), len(rows_clean)))
+        """, (
+            current_user.id,
+            file.filename,
+            json.dumps(rows_clean[:10]),
+            len(rows_clean)
+        ))
         batch_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
         conn.close()
 
+        # Store rows in session for further processing
         session[f"batch_{batch_id}_rows"] = rows_clean
 
         return redirect(f"/preview/{batch_id}")
@@ -201,7 +224,10 @@ def upload():
 @login_required
 def preview(batch_id):
     conn, cur = get_db()
-    cur.execute("SELECT filename, preview_data, total_rows FROM batches WHERE id=%s", (batch_id,))
+    cur.execute("""
+        SELECT filename, preview_data, total_rows
+        FROM batches WHERE id=%s
+    """, (batch_id,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -215,48 +241,58 @@ def preview(batch_id):
     return render_template(
         "preview.html",
         filename=filename,
-      preview=preview_data,
-
+        preview=preview_data,
         total=total,
         batch_id=batch_id
     )
 
+
+# =====================================================================
+# PROCESSING PAGE (fake animation)
+# =====================================================================
 
 @app.route("/processing/<int:batch_id>")
 @login_required
 def processing(batch_id):
     rows = session.get(f"batch_{batch_id}_rows", [])
     total = len(rows)
-    delay = 8
+    
+    # How long the animation runs before moving to results
+    delay_seconds = 8
 
     return render_template(
         "processing.html",
-        dataset_json=json.dumps(SANCTIONS_DATA),
-        delay_seconds=delay,
+        dataset_json=json.dumps({"placeholder": []}),  # no local dataset anymore
+        delay_seconds=delay_seconds,
         batch_id=batch_id
     )
 
 
+# =====================================================================
+# MAIN BATCH PROCESSOR — CALLS OPENSANCTIONS
+# =====================================================================
+
 def process_batch(batch_id, rows):
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+
     headers = {
-        "Authorization": f"Apikey {API_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"ApiKey {API_KEY}",
+        "Content-Type": "application/json",
     }
 
     def dob_matches(user_dob, os_birth_dates):
-        """DOB RULE:
-        - User always gives full DOB (DD/MM/YYYY or YYYY-MM-DD)
-        - OS may have: full DOB OR year-only
-        - Match if year matches AND:
-           * if OS has full DOB → full date must match exactly
-           * if OS has only year → accept
         """
-
+        DOB RULE:
+        - User gives full DOB (DD/MM/YYYY or YYYY-MM-DD)
+        - OS may give full DOB OR year-only
+        - Accept match if year matches AND:
+             * OS has only year → accept
+             * OS has full DOB → must match exactly
+        """
         if not user_dob:
             return True
 
-        # Extract user year/month/day from any format
+        # Normalise user DOB to digits only
         digits = ''.join(ch for ch in user_dob if ch.isdigit())
         if len(digits) != 8:
             return False
@@ -266,33 +302,31 @@ def process_batch(batch_id, rows):
         user_year = digits[4:8]
 
         for bd in os_birth_dates:
-            if not bd or len(bd) < 4:
+            if not bd:
+                continue
+
+            if len(bd) < 4:
                 continue
 
             os_year = bd[:4]
             os_month = bd[5:7] if len(bd) >= 7 else None
             os_day = bd[8:10] if len(bd) >= 10 else None
 
-            # YEAR MUST MATCH
+            # Year must match
             if os_year != user_year:
                 continue
 
-            os_has_full = (
-                os_month not in (None, "00") and
-                os_day not in (None, "00")
-            )
-
-            if not os_has_full:
-                # OS only has year → year match is enough
+            # If OS only gives year, accept
+            if os_month in (None, "00") or os_day in (None, "00"):
                 return True
 
-            # OS has full date → must match exactly
+            # Full DOB match
             if os_day == user_day and os_month == user_month:
                 return True
 
         return False
 
-    def matches_citizenship(user_country, props):
+    def citizenship_matches(user_country, props):
         if not user_country:
             return True
 
@@ -301,24 +335,25 @@ def process_batch(batch_id, rows):
 
         return user_country.lower() in nat
 
-    results_to_store = []
+    # Store results for DB write
+    batch_results = []
 
-    # -------------------------------------------------------
+    # ================================================================
     # PROCESS EACH ROW
-    # -------------------------------------------------------
+    # ================================================================
     for idx, r in enumerate(rows):
         query_id = f"row{idx}"
 
         properties = {
             "firstName": [r["first_name"]],
-            "lastName": [r["last_name"]]
+            "lastName": [r["last_name"]],
         }
 
         if r.get("dob"):
             properties["birthDate"] = [r["dob"]]
 
-        if r.get("citizenship"):
-            properties["country"] = [r["citizenship"]]
+        if r.get("country_of_citizenship"):
+            properties["country"] = [r["country_of_citizenship"]]
 
         payload = {
             "queries": {
@@ -329,103 +364,127 @@ def process_batch(batch_id, rows):
             }
         }
 
-        # Call OpenSanctions
+        # Perform OS API request
         try:
             resp = requests.post(
                 "https://api.opensanctions.org/match/default",
                 headers=headers,
                 json=payload,
-                timeout=10
+                timeout=12
             )
-            match_data = resp.json()
+            os_json = resp.json()
         except Exception as e:
-            match_data = {"error": str(e)}
+            os_json = {"error": str(e)}
 
-        os_results = match_data.get("responses", {}).get(query_id, {}).get("results", [])
-        
-        print("==== OPEN SANCTIONS RAW RESULTS ====")
-        print(json.dumps(os_results, indent=2))
-        print("====================================")
+        results_raw = os_json.get("responses", {}).get(query_id, {}).get("results", [])
 
-        # -------------------------------------------------------
-        # APPLY STRICT MATCHING RULES
-        # -------------------------------------------------------
+        # Apply rules to determine TRUE matches
         true_matches = []
 
-        for m in os_results:
+        for m in results_raw:
             score = m.get("score", 0)
+
+            # Score threshold
             if score < 0.75:
                 continue
 
             props = m.get("properties", {})
 
-            # citizenship rule
-            if not matches_citizenship(r.get("citizenship"), props):
+            # Citizenship test
+            if not citizenship_matches(r.get("country_of_citizenship"), props):
                 continue
 
-            # DOB rule
+            # DOB test
             if not dob_matches(r.get("dob"), props.get("birthDate", [])):
                 continue
 
-            # Passed all filters → REAL MATCH
             true_matches.append(m)
 
-        # RISK ASSESSMENT
         risk = "High" if true_matches else "Clear"
 
-        # Store final result row
-        results_to_store.append((
-            batch_id,
-            r["first_name"],
-            r["last_name"],
-            r.get("citizenship"),
-            r.get("dob"),
-            risk,
-            json.dumps(true_matches)  # Only TRUE matches, not whole API JSON
+        batch_results.append({
+            "batch_id": batch_id,
+            "first_name": r["first_name"],
+            "last_name": r["last_name"],
+            "dob": r["dob"],
+            "country": r["country_of_citizenship"],
+            "risk_level": risk,
+            "match_data": true_matches,    # jsonb
+            "raw_json": results_raw        # store full API response raw if needed
+        })
+
+    # ================================================================
+    # WRITE RESULTS TO DATABASE
+    # ================================================================
+    conn, cur = get_db()
+
+    for row in batch_results:
+        cur.execute("""
+            INSERT INTO results
+                (batch_id, first_name, last_name, dob, country_of_citizenship,
+                 risk_level, match_data, raw_json)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            row["batch_id"],
+            row["first_name"],
+            row["last_name"],
+            row["dob"],
+            row["country"],
+            row["risk_level"],
+            json.dumps(row["match_data"]),
+            json.dumps(row["raw_json"]),
         ))
 
-    # Save into DB
-    conn, cur = get_db()
-    for res in results_to_store:
-        cur.execute("""
-            INSERT INTO results (batch_id, first_name, last_name, citizenship, dob, risk_level, raw_json)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, res)
     conn.commit()
     cur.close()
     conn.close()
 
 
-
-
+# =====================================================================
+# FINISH ROUTE — executes the processing
+# =====================================================================
 
 @app.route("/finish/<int:batch_id>")
 @login_required
 def finish(batch_id):
     rows = session.get(f"batch_{batch_id}_rows", [])
-    process_batch(batch_id, rows)
+
+    process_batch(batch_id, rows)   # Run OS checks
+
     return redirect(f"/results/{batch_id}")
 
 
+# =====================================================================
+# RESULTS PAGE
+# =====================================================================
+
 @app.route("/results/<int:batch_id>")
+@login_required
 def results(batch_id):
     conn, cur = get_db()
     cur.execute("""
-        SELECT first_name, last_name, dob, citizenship, risk_level
+        SELECT first_name, last_name, dob, country_of_citizenship,
+               risk_level, match_data
         FROM results
-        WHERE batch_id = %s
+        WHERE batch_id=%s
         ORDER BY id ASC
     """, (batch_id,))
     rows = cur.fetchall()
+
     cur.close()
     conn.close()
+
+    # rows = [(first, last, dob, country, risk, match_json), …]
 
     return render_template("results.html", rows=rows, batch_id=batch_id)
 
 
+# =====================================================================
+# OPTIONAL DEBUG ROUTE
+# =====================================================================
 
-# =====================================================================
-#   LOCAL RUN
-# =====================================================================
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+@app.route("/processing_debug/<int:batch_id>")
+def processing_debug(batch_id):
+    # Placeholder for logs or debugging instrumentation
+    # (Empty for now unless you want live debug output.)
+    return {"log": "processing…"}
