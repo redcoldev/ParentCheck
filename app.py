@@ -476,7 +476,21 @@ def results(batch_id):
 
     # rows = [(first, last, dob, country, risk, match_json), …]
 
-    return render_template("results.html", rows=rows, batch_id=batch_id)
+# rows is: [(first_name, last_name, dob, country, risk, match_data_json), ...]
+
+clean_rows = []
+for r in rows:
+    first, last, dob, country, risk, match_json = r
+    clean_rows.append({
+        "first": first,
+        "last": last,
+        "dob": dob,
+        "country": country,
+        "risk": risk,
+        "matches": match_json  # already a Python object because column is jsonb
+    })
+
+return render_template("results.html", rows=clean_rows, batch_id=batch_id)
 
 
 # =====================================================================
