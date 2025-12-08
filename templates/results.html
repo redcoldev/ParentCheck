@@ -23,42 +23,32 @@
     <tbody>
 
         {% for r in rows %}
-        {% set first = r[0] %}
-        {% set last = r[1] %}
-        {% set country = r[2] %}
-        {% set dob = r[3] %}
-        {% set js = r[4] %}
+            {# r = (first_name, last_name, dob, citizenship, risk_level, raw_json) #}
 
-        {# Determine risk level from JSON #}
-        {% if js.results and js.results[0].score %}
-            {% set score = js.results[0].score %}
-            {% if score > 0.75 %}
-                {% set risk = "High" %}
-            {% elif score > 0.40 %}
-                {% set risk = "Review" %}
-            {% else %}
-                {% set risk = "Clear" %}
-            {% endif %}
-        {% else %}
-            {% set risk = "Clear" %}
-        {% endif %}
+            {% set first = r[0] %}
+            {% set last = r[1] %}
+            {% set dob = r[2] %}
+            {% set country = r[3] %}
+            {% set risk = r[4] %}
+            {% set matches = r[5] | from_json %}
 
-        <tr>
-            <td>{{ first }}</td>
-            <td>{{ last }}</td>
-            <td>{{ dob }}</td>
-            <td>{{ country }}</td>
+            <tr>
+                <td>{{ first }}</td>
+                <td>{{ last }}</td>
+                <td>{{ dob }}</td>
+                <td>{{ country }}</td>
 
-<td>
-    {% if r[6] == "Clear" %}
-        <span class="badge-clear">Clear</span>
-    {% elif r[6] == "Review" %}
-        <span class="badge-review">Review</span>
-    {% else %}
-        <span class="badge-high">High</span>
-    {% endif %}
-</td>
-        </tr>
+                <td>
+                    {% if risk == "Clear" %}
+                        <span class="badge-clear">Clear</span>
+                    {% elif risk == "Review" %}
+                        <span class="badge-review">Review</span>
+                    {% else %}
+                        <span class="badge-high">High</span>
+                    {% endif %}
+                </td>
+            </tr>
+
         {% endfor %}
 
     </tbody>
