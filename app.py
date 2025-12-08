@@ -406,39 +406,41 @@ def api_screen():
         matched = m
         break
 
-    # -----------------------------
-    # IF NO MATCH FOUND
-    # -----------------------------
-    if not matched:
-        return {"risk": "Clear", "summary": "No matches"}, 200
-
-    entity_id = matched.get("id")
-
-    # -----------------------------
-    # FETCH FULL ENTITY DETAILS
-    # -----------------------------
-    detail_url = f"https://api.opensanctions.org/entities/{entity_id}"
-
-    try:
-        full = requests.get(detail_url, headers=headers, timeout=10).json()
-    except Exception as e:
-        return {
-            "risk": "High",
-            "summary": matched.get("caption"),
-            "details_error": str(e)
-        }, 200
-
-    # Medium Summary Fields
+# IF NO MATCH FOUND
+if not matched:
     return {
-        "risk": "High",
-        "summary": f"{matched.get('caption')} (score {matched.get('score')})",
+        "risk": "Clear",
+        "summary": "No matches",
+        "debug": {
+            "input_first": first,
+            "input_last": last,
+            "input_dob": norm_dob,
+            "input_country": norm_country,
+            "raw_results": results  # full results OS returned
+        }
+    }, 200
+
+# IF MATCH FOUND
+return {
+    "risk": "High",
+    "summary": f"{matched.get('caption')} (score {matched.get('score')})",
+    "details": {
         "datasets": full.get("datasets", []),
         "aliases": full.get("aliases", []),
-        "profile": full.get("profile", ""),
-        "birth_date": full.get("properties", {}).get("birthDate", [None])[0],
-        "birth_place": full.get("properties", {}).get("birthPlace", [None])[0],
+        "birth_date": full.get("properties", {}).get("birthDate", []),
+        "birth_place": full.get("properties", {}).get("birthPlace", []),
         "topics": full.get("topics", []),
-    }, 200
+        "profile": full.get("profile", "")
+    },
+    "debug": {
+        "score": matched.get("score"),
+        "matched_first": matched.get("properties", {}).get("firstName"),
+        "matched_last": matched.get("properties", {}).get("lastName"),
+        "matched_birthDate": matched.get("properties", {}).get("birthDate"),
+        "matched_citizenships": matched.get("properties", {}).get("citizenship"),
+        "raw_results": results
+    }
+}, 200
 
 
 
