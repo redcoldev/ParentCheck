@@ -262,6 +262,58 @@ def processing(batch_id):
     )
 
 
+
+@app.post("/api/screen")
+@login_required
+def api_screen():
+    row = request.get_json()
+
+    API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
+    headers = {"Authorization": f"ApiKey {API_KEY}"}
+
+    payload = {
+        "queries": {
+            "q": {
+                "schema": "Person",
+                "properties": {
+                    "firstName": [row["first_name"]],
+                    "lastName": [row["last_name"]],
+                    "birthDate": [row.get("dob", "")],
+                    "country": [row.get("country_of_citizenship", "")]
+                }
+            }
+        }
+    }
+
+    try:
+        r = requests.post(
+            "https://api.opensanctions.org/match/default",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+        data = r.json()
+        results = data.get("responses", {}).get("q", {}).get("results", [])
+    except Exception as e:
+        return {"risk": "Error", "summary": str(e)}, 200
+
+    # choose best match
+    match = None
+    for m in results:
+        if m.get("score", 0) >= 0.75:
+            match = m
+            break
+
+    if match:
+        summary = f"{match.get('caption','')} (score {match.get('score')})"
+        return {"risk": "High", "summary": summary}, 200
+
+    return {"risk": "Clear", "summary": "No matches"}, 200
+
+
+
+
+
 # =====================================================================
 # MAIN BATCH PROCESSOR — CALLS OPENSANCTIONS
 # =====================================================================
