@@ -276,6 +276,7 @@ def api_screen():
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
     headers = {"Authorization": f"ApiKey {API_KEY}"}
 
+    # 1) --- Perform match search ---
     payload = {
         "queries": {
             "q": {
@@ -302,17 +303,18 @@ def api_screen():
     except Exception as e:
         return {"risk": "Error", "summary": str(e)}, 200
 
-    # STRICT FILTERING
+    # 2) --- Strict filtering ---
+    best = None
     for m in results:
         score = m.get("score", 0)
         if score != 1.0:
-            continue  # MUST be exactly 1.0
+            continue  # strict 1.0 score requirement
 
         props = m.get("properties", {})
         os_first = props.get("firstName", [""])[0].lower()
         os_last = props.get("lastName", [""])[0].lower()
 
-        # First + Last name must match EXACTLY
+        # First + Last name must match exactly
         if os_first != first:
             continue
         if os_last != last:
@@ -322,30 +324,70 @@ def api_screen():
         os_nations = [n.lower() for n in props.get("nationality", []) + props.get("citizenship", [])]
         if country:
             if country not in os_nations:
-                continue  # mismatch = no match
+                continue
 
         # DOB check
         if dob:
             os_dobs = props.get("birthDate", [])
-            os_clean = []
+            cleaned_dobs = []
             for d in os_dobs:
                 d = d.replace("-", "").replace("/", "")
                 if len(d) == 8:
-                    os_clean.append(f"{d[6:8]}/{d[4:6]}/{d[0:4]}")  # convert YYYYMMDD to DD/MM/YYYY
+                    cleaned_dobs.append(f"{d[6:8]}/{d[4:6]}/{d[0:4]}")  # convert YYYYMMDD to DD/MM/YYYY
+            if dob not in cleaned_dobs:
+                continue
 
-            if dob not in os_clean:
-                continue  # mismatch DOB
+        best = m
+        break
 
-        # If it passed ALL strict checks → MATCH
-        caption = m.get("caption", "")
+    if not best:
+        return {"risk": "Clear", "summary": "No matches"}, 200
+
+    entity_id = best.get("id")
+
+    # 3) --- Fetch FULL entity details ---
+    detail_url = f"https://api.opensanctions.org/entities/{entity_id}"
+    try:
+        d = requests.get(detail_url, headers=headers, timeout=10).json()
+    except Exception as e:
         return {
             "risk": "High",
-            "summary": f"{caption} (score 1.0)"
+            "summary": best.get("caption", "") + " (score 1.0)",
+            "details_error": str(e)
         }, 200
 
-    # No strict matches found
-    return {"risk": "Clear", "summary": "No matches"}, 200
+    # Extract medium summary fields
+    caption = best.get("caption", "")
 
+    aliases = d.get("aliases", [])
+    datasets = d.get("datasets", [])
+    topics = d.get("topics", [])
+    profile = d.get("profile", "")
+
+    birth_date = None
+    birth_place = None
+
+    # birthDate statements are in "birthDate" property, but OS may give statements instead
+    birth_props = d.get("properties", {})
+    if "birthDate" in birth_props:
+        if isinstance(birth_props["birthDate"], list):
+            birth_date = birth_props["birthDate"][0]
+
+    if "birthPlace" in birth_props:
+        if isinstance(birth_props["birthPlace"], list):
+            birth_place = birth_props["birthPlace"][0]
+
+    return {
+        "risk": "High",
+        "summary": f"{caption} (score 1.0)",
+        "entity_id": entity_id,
+        "aliases": aliases,
+        "datasets": datasets,
+        "topics": topics,
+        "profile": profile,
+        "birth_date": birth_date,
+        "birth_place": birth_place
+    }, 200
 
 
 
