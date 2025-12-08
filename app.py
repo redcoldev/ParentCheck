@@ -255,15 +255,9 @@ def preview(batch_id):
 @login_required
 def processing(batch_id):
     rows = session.get(f"batch_{batch_id}_rows", [])
-    total = len(rows)
-    
-    # How long the animation runs before moving to results
-    delay_seconds = 8
-
     return render_template(
         "processing.html",
-        dataset_json=json.dumps({"placeholder": []}),  # no local dataset anymore
-        delay_seconds=delay_seconds,
+        rows_json=json.dumps(rows),
         batch_id=batch_id
     )
 
