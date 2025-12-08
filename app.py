@@ -263,174 +263,147 @@ def processing(batch_id):
 # PROCESSING PAGE 
 # =====================================================================
 
-@app.post("/api/screen")
-@login_required
+@app.route("/api/screen", methods=["POST"])
 def api_screen():
-    row = request.get_json()
+    data = request.json
 
-    # -----------------------------
-    # NORMALISE DOB → YYYY-MM-DD
-    # -----------------------------
-    def normalize_dob(d):
+    user_first = data.get("first_name", "").strip().lower()
+    user_last = data.get("last_name", "").strip().lower()
+    user_dob_raw = data.get("dob", "").strip()
+
+    # Normalise DOB to YYYY-MM-DD
+    def normalise_dob(d):
         if not d:
             return None
-        d = d.replace("/", "-").strip()
-
+        d = d.replace("/", "-")
         parts = d.split("-")
-        if len(parts) == 3 and len(parts[0]) == 2 and len(parts[2]) == 4:
-            return f"{parts[2]}-{parts[1]}-{parts[0]}"
-
-        if len(parts[0]) == 4:
-            return d
-
+        if len(parts) == 3:
+            dd, mm, yyyy = parts
+            return f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
         return None
 
-    norm_dob = normalize_dob(row.get("dob", ""))
+    user_dob = normalise_dob(user_dob_raw)
 
-    # -----------------------------
-    # NORMALISE COUNTRY
-    # -----------------------------
-    def normalize_country(c):
-        if not c:
-            return None
-        c = c.strip().lower()
-        mapping = {
-            "russia": "russian federation",
-            "ru": "russian federation",
-            "china": "china",
-            "prc": "china",
-            "united kingdom": "united kingdom",
-            "uk": "united kingdom",
-            "britain": "united kingdom"
-        }
-        return mapping.get(c, c)
-
-    norm_country = normalize_country(row.get("country_of_citizenship", ""))
-
-    first = row["first_name"].strip().lower()
-    last = row["last_name"].strip().lower()
-
-    API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
-    headers = {"Authorization": f"ApiKey {API_KEY}"}
-
-    url = "https://api.opensanctions.org/match/sanctions"
-
-    query_properties = {
-        "firstName": [row["first_name"]],
-        "lastName": [row["last_name"]],
+    # Build API request
+    headers = {
+        "Authorization": f"ApiKey {OPEN_SANCTIONS_KEY}",
+        "Content-Type": "application/json",
     }
-
-    if norm_dob:
-        query_properties["birthDate"] = [norm_dob]
-    if norm_country:
-        query_properties["citizenship"] = [norm_country]
 
     payload = {
         "queries": {
             "q": {
                 "schema": "Person",
-                "properties": query_properties
+                "properties": {
+                    "firstName": [data.get("first_name")],
+                    "lastName": [data.get("last_name")]
+                }
             }
         }
     }
 
-    # -----------------------------
-    # CALL OS API
-    # -----------------------------
+    if user_dob:
+        payload["queries"]["q"]["properties"]["birthDate"] = [user_dob]
+
+    # Call OS
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=10)
-        data = r.json()
-        results = data.get("responses", {}).get("q", {}).get("results", [])
+        resp = requests.post(
+            "https://api.opensanctions.org/match/default",
+            headers=headers,
+            json=payload,
+            timeout=12
+        )
+        os_json = resp.json()
     except Exception as e:
-        return {"risk": "Error", "summary": str(e)}, 200
+        return {
+            "risk": "Error",
+            "summary": str(e),
+            "details": "",
+            "debug": {"error": str(e)}
+        }
 
-    # -----------------------------
-    # MATCH LOGIC
-    # -----------------------------
-    matched = None
+    results = os_json.get("responses", {}).get("q", {}).get("results", [])
+    debug = []
 
+    def names_match(props):
+        """Exact first + last name match against any OS alias."""
+        aliases = props.get("alias", []) + props.get("name", [])
+        aliases_norm = [a.lower() for a in aliases]
+
+        for full in aliases_norm:
+            parts = full.split()
+            if len(parts) < 2:
+                continue
+
+            os_first = parts[0]
+            os_last = parts[-1]
+
+            if os_first == user_first and os_last == user_last:
+                return True
+
+        return False
+
+    def dob_matches(user_dob, os_birth_dates):
+        """DOB exact match or year-only match."""
+        if not user_dob:
+            return True
+        if not os_birth_dates:
+            return True
+
+        yyyy = user_dob[:4]
+
+        for bd in os_birth_dates:
+            if not bd:
+                continue
+
+            # Full DOB match
+            if len(bd) >= 10 and bd == user_dob:
+                return True
+
+            # Year match
+            if bd[:4] == yyyy:
+                return True
+
+        return False
+
+    # Evaluate candidates
     for m in results:
         score = m.get("score", 0)
-        if score < 0.90:
-            continue
-
         props = m.get("properties", {})
-        os_first = props.get("firstName", [""])[0].lower()
-        os_last = props.get("lastName", [""])[0].lower()
 
-        if os_first != first or os_last != last:
+        debug.append({
+            "aliases": props.get("alias", []),
+            "score": score,
+            "birthDate": props.get("birthDate", [])
+        })
+
+        if score != 1.0:
             continue
 
-        if norm_dob:
-            os_dobs = props.get("birthDate", [])
-            normalized = []
-            for dob in os_dobs:
-                dob = dob.replace("/", "-")
-                if len(dob) == 8 and dob.isdigit():
-                    dob = f"{dob[0:4]}-{dob[4:6]}-{dob[6:8]}"
-                normalized.append(dob)
-            if norm_dob not in normalized:
-                continue
+        if not names_match(props):
+            continue
 
-        if norm_country:
-            os_countries = [
-                normalize_country(c)
-                for c in props.get("citizenship", []) + props.get("nationality", [])
-            ]
-            if norm_country not in os_countries:
-                continue
+        if not dob_matches(user_dob, props.get("birthDate", [])):
+            continue
 
-        matched = m
-        break
-
-    # -----------------------------
-    # NO MATCH CASE
-    # -----------------------------
-    if not matched:
+        # Accept this match
         return {
-            "risk": "Clear",
-            "summary": "No matches",
-            "debug": {
-                "input_first": first,
-                "input_last": last,
-                "input_dob": norm_dob,
-                "input_country": norm_country,
-                "raw_results": results
-            }
-        }, 200
-
-    # -----------------------------
-    # FETCH FULL ENTITY DETAILS
-    # -----------------------------
-    entity_id = matched.get("id")
-    detail_url = f"https://api.opensanctions.org/entities/{entity_id}"
-
-    try:
-        full = requests.get(detail_url, headers=headers, timeout=10).json()
-    except Exception as e:
-        full = {}
-
-    # -----------------------------
-    # MATCH FOUND CASE
-    # -----------------------------
-    return {
-        "risk": "High",
-        "summary": f"{matched.get('caption')} (score {matched.get('score')})",
-        "datasets": full.get("datasets", []),
-        "aliases": full.get("aliases", []),
-        "birth_date": full.get("properties", {}).get("birthDate", [None])[0],
-        "birth_place": full.get("properties", {}).get("birthPlace", [None])[0],
-        "topics": full.get("topics", []),
-        "profile": full.get("profile", ""),
-        "debug": {
-            "score": matched.get("score"),
-            "matched_first": matched.get("properties", {}).get("firstName"),
-            "matched_last": matched.get("properties", {}).get("lastName"),
-            "matched_birthDate": matched.get("properties", {}).get("birthDate"),
-            "matched_citizenships": matched.get("properties", {}).get("citizenship"),
-            "raw_results": results
+            "risk": "Match",
+            "summary": f"{data.get('first_name')} {data.get('last_name')} appears on sanctions lists",
+            "datasets": m.get("datasets", []),
+            "aliases": props.get("alias", []),
+            "birth_date": props.get("birthDate", []),
+            "topics": props.get("topics", []),
+            "profile": props.get("summary", ""),
+            "debug": debug
         }
-    }, 200
+
+    # Otherwise no match
+    return {
+        "risk": "Clear",
+        "summary": "No sanctions match.",
+        "debug": debug
+    }
 
 
 
