@@ -47,6 +47,14 @@
     tbody tr:nth-child(even) {
         background: #fafafa;
     }
+
+    /* Temporary debugging column style */
+    .debug {
+        font-size: 11px;
+        color: #444;
+        white-space: pre-wrap;
+        max-width: 400px;
+    }
 </style>
 </head>
 <body>
@@ -62,6 +70,7 @@
             <th>Status</th>
             <th>Summary</th>
             <th>Details</th>
+            <th>Debug</th> <!-- ADDED -->
         </tr>
     </thead>
     <tbody id="tableBody"></tbody>
@@ -73,13 +82,10 @@
     let index = 0;
 
     async function processNext() {
-        if (index >= rows.length) {
-            return; // finished
-        }
+        if (index >= rows.length) return;
 
         const row = rows[index];
 
-        // --- Build initial row ---
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${row.first_name} ${row.last_name}</td>
@@ -88,10 +94,10 @@
             <td class="status" id="status-${index}">Checking…</td>
             <td id="summary-${index}">—</td>
             <td id="details-${index}">—</td>
+            <td class="debug" id="debug-${index}">—</td>  <!-- ADDED -->
         `;
         document.getElementById("tableBody").appendChild(tr);
 
-        // --- API call ---
         try {
             const resp = await fetch("/api/screen", {
                 method: "POST",
@@ -100,9 +106,10 @@
             });
             const data = await resp.json();
 
-            const statusEl = document.getElementById(`status-${index}`);
+            const statusEl  = document.getElementById(`status-${index}`);
             const summaryEl = document.getElementById(`summary-${index}`);
             const detailsEl = document.getElementById(`details-${index}`);
+            const debugEl   = document.getElementById(`debug-${index}`);
 
             // STATUS
             if (data.risk === "Clear") {
@@ -116,7 +123,7 @@
             // SUMMARY
             summaryEl.textContent = data.summary || "(no summary)";
 
-            // DETAILS BLOCK
+            // DETAILS
             const details = [];
 
             if (data.datasets?.length > 0) {
@@ -148,10 +155,14 @@
 
             detailsEl.innerHTML = details.length > 0 ? details.join("<br>") : "—";
 
+            // DEBUG OUTPUT (FULL JSON)
+            debugEl.textContent = JSON.stringify(data.debug, null, 2);
+
         } catch (err) {
-            document.getElementById(`status-${index}`).textContent = "❌ Error";
+            document.getElementById(`status-${index}`).textContent  = "❌ Error";
             document.getElementById(`summary-${index}`).textContent = err.toString();
             document.getElementById(`details-${index}`).textContent = "—";
+            document.getElementById(`debug-${index}`).textContent   = err.toString();
         }
 
         index++;
