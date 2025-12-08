@@ -470,27 +470,24 @@ def results(batch_id):
         ORDER BY id ASC
     """, (batch_id,))
     rows = cur.fetchall()
-
     cur.close()
     conn.close()
 
-    # rows = [(first, last, dob, country, risk, match_json), …]
+    # Transform DB rows into clean dicts for template
+    clean_rows = []
+    for r in rows:
+        first, last, dob, country, risk, match_json = r
+        clean_rows.append({
+            "first": first,
+            "last": last,
+            "dob": dob,
+            "country": country,
+            "risk": risk,
+            "matches": match_json   # already a Python list/dict (jsonb)
+        })
 
-# rows is: [(first_name, last_name, dob, country, risk, match_data_json), ...]
+    return render_template("results.html", rows=clean_rows, batch_id=batch_id)
 
-clean_rows = []
-for r in rows:
-    first, last, dob, country, risk, match_json = r
-    clean_rows.append({
-        "first": first,
-        "last": last,
-        "dob": dob,
-        "country": country,
-        "risk": risk,
-        "matches": match_json  # already a Python object because column is jsonb
-    })
-
-return render_template("results.html", rows=clean_rows, batch_id=batch_id)
 
 
 # =====================================================================
