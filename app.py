@@ -461,32 +461,8 @@ def finish(batch_id):
 @app.route("/results/<int:batch_id>")
 @login_required
 def results(batch_id):
-    conn, cur = get_db()
-    cur.execute("""
-        SELECT first_name, last_name, dob, country_of_citizenship,
-               risk_level, match_data
-        FROM results
-        WHERE batch_id=%s
-        ORDER BY id ASC
-    """, (batch_id,))
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    return redirect("/dashboard")
 
-    # Transform DB rows into clean dicts for template
-    clean_rows = []
-    for r in rows:
-        first, last, dob, country, risk, match_json = r
-        clean_rows.append({
-            "first": first,
-            "last": last,
-            "dob": dob,
-            "country": country,
-            "risk": risk,
-            "matches": match_json   # already a Python list/dict (jsonb)
-        })
-
-    return render_template("results.html", rows=clean_rows, batch_id=batch_id)
 
 
 
