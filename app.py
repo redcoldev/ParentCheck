@@ -276,14 +276,10 @@ def api_screen():
             return None
         d = d.replace("/", "-").strip()
 
-        # DD-MM-YYYY → YYYY-MM-DD
         parts = d.split("-")
-        if len(parts) == 3:
-            # If first component is day and last is year
-            if len(parts[0]) == 2 and len(parts[2]) == 4:
-                return f"{parts[2]}-{parts[1]}-{parts[0]}"
+        if len(parts) == 3 and len(parts[0]) == 2 and len(parts[2]) == 4:
+            return f"{parts[2]}-{parts[1]}-{parts[0]}"
 
-        # Already YYYY-MM-DD
         if len(parts[0]) == 4:
             return d
 
@@ -292,13 +288,12 @@ def api_screen():
     norm_dob = normalize_dob(row.get("dob", ""))
 
     # -----------------------------
-    # NORMALISE COUNTRY / CITIZENSHIP
+    # NORMALISE COUNTRY
     # -----------------------------
     def normalize_country(c):
         if not c:
             return None
         c = c.strip().lower()
-
         mapping = {
             "russia": "russian federation",
             "ru": "russian federation",
@@ -308,7 +303,6 @@ def api_screen():
             "uk": "united kingdom",
             "britain": "united kingdom"
         }
-
         return mapping.get(c, c)
 
     norm_country = normalize_country(row.get("country_of_citizenship", ""))
@@ -319,15 +313,8 @@ def api_screen():
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
     headers = {"Authorization": f"ApiKey {API_KEY}"}
 
-    # -----------------------------
-    # *** CRITICAL FIX ***
-    # Use SANCTIONS dataset ONLY
-    # -----------------------------
     url = "https://api.opensanctions.org/match/sanctions"
 
-    # -----------------------------
-    # STRUCTURED MATCH QUERY
-    # -----------------------------
     query_properties = {
         "firstName": [row["first_name"]],
         "lastName": [row["last_name"]],
@@ -335,7 +322,6 @@ def api_screen():
 
     if norm_dob:
         query_properties["birthDate"] = [norm_dob]
-
     if norm_country:
         query_properties["citizenship"] = [norm_country]
 
@@ -349,7 +335,7 @@ def api_screen():
     }
 
     # -----------------------------
-    # CALL OS SANCTIONS MATCHING
+    # CALL OS API
     # -----------------------------
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=10)
@@ -359,46 +345,37 @@ def api_screen():
         return {"risk": "Error", "summary": str(e)}, 200
 
     # -----------------------------
-    # APPLY STRICT MATCH LOGIC (Option B)
-    # Score >= 0.90, exact first/last name, DOB if provided, nationality if provided
+    # MATCH LOGIC
     # -----------------------------
     matched = None
 
     for m in results:
         score = m.get("score", 0)
         if score < 0.90:
-            continue  # REQUIRE STRONG MATCH
+            continue
 
         props = m.get("properties", {})
-
         os_first = props.get("firstName", [""])[0].lower()
         os_last = props.get("lastName", [""])[0].lower()
 
-        # First/Last MUST MATCH EXACTLY
         if os_first != first or os_last != last:
             continue
 
-        # DOB check if provided
         if norm_dob:
-            os_dobs_raw = props.get("birthDate", [])
-            os_dobs_norm = []
-
-            for dob in os_dobs_raw:
+            os_dobs = props.get("birthDate", [])
+            normalized = []
+            for dob in os_dobs:
                 dob = dob.replace("/", "-")
-                # Convert YYYYMMDD → YYYY-MM-DD
                 if len(dob) == 8 and dob.isdigit():
                     dob = f"{dob[0:4]}-{dob[4:6]}-{dob[6:8]}"
-                os_dobs_norm.append(dob)
-
-            if norm_dob not in os_dobs_norm:
+                normalized.append(dob)
+            if norm_dob not in normalized:
                 continue
 
-        # NATIONALITY check if provided
         if norm_country:
             os_countries = [
-                normalize_country(c) for c in
-                props.get("citizenship", []) +
-                props.get("nationality", [])
+                normalize_country(c)
+                for c in props.get("citizenship", []) + props.get("nationality", [])
             ]
             if norm_country not in os_countries:
                 continue
@@ -406,41 +383,54 @@ def api_screen():
         matched = m
         break
 
-# IF NO MATCH FOUND
-if not matched:
-    return {
-        "risk": "Clear",
-        "summary": "No matches",
-        "debug": {
-            "input_first": first,
-            "input_last": last,
-            "input_dob": norm_dob,
-            "input_country": norm_country,
-            "raw_results": results  # full results OS returned
-        }
-    }, 200
+    # -----------------------------
+    # NO MATCH CASE
+    # -----------------------------
+    if not matched:
+        return {
+            "risk": "Clear",
+            "summary": "No matches",
+            "debug": {
+                "input_first": first,
+                "input_last": last,
+                "input_dob": norm_dob,
+                "input_country": norm_country,
+                "raw_results": results
+            }
+        }, 200
 
-# IF MATCH FOUND
-return {
-    "risk": "High",
-    "summary": f"{matched.get('caption')} (score {matched.get('score')})",
-    "details": {
+    # -----------------------------
+    # FETCH FULL ENTITY DETAILS
+    # -----------------------------
+    entity_id = matched.get("id")
+    detail_url = f"https://api.opensanctions.org/entities/{entity_id}"
+
+    try:
+        full = requests.get(detail_url, headers=headers, timeout=10).json()
+    except Exception as e:
+        full = {}
+
+    # -----------------------------
+    # MATCH FOUND CASE
+    # -----------------------------
+    return {
+        "risk": "High",
+        "summary": f"{matched.get('caption')} (score {matched.get('score')})",
         "datasets": full.get("datasets", []),
         "aliases": full.get("aliases", []),
-        "birth_date": full.get("properties", {}).get("birthDate", []),
-        "birth_place": full.get("properties", {}).get("birthPlace", []),
+        "birth_date": full.get("properties", {}).get("birthDate", [None])[0],
+        "birth_place": full.get("properties", {}).get("birthPlace", [None])[0],
         "topics": full.get("topics", []),
-        "profile": full.get("profile", "")
-    },
-    "debug": {
-        "score": matched.get("score"),
-        "matched_first": matched.get("properties", {}).get("firstName"),
-        "matched_last": matched.get("properties", {}).get("lastName"),
-        "matched_birthDate": matched.get("properties", {}).get("birthDate"),
-        "matched_citizenships": matched.get("properties", {}).get("citizenship"),
-        "raw_results": results
-    }
-}, 200
+        "profile": full.get("profile", ""),
+        "debug": {
+            "score": matched.get("score"),
+            "matched_first": matched.get("properties", {}).get("firstName"),
+            "matched_last": matched.get("properties", {}).get("lastName"),
+            "matched_birthDate": matched.get("properties", {}).get("birthDate"),
+            "matched_citizenships": matched.get("properties", {}).get("citizenship"),
+            "raw_results": results
+        }
+    }, 200
 
 
 
