@@ -25,12 +25,13 @@
         {% for r in rows %}
             {# r = (first_name, last_name, dob, citizenship, risk_level, raw_json) #}
 
-            {% set first = r[0] %}
-            {% set last = r[1] %}
-            {% set dob = r[2] %}
-            {% set country = r[3] %}
-            {% set risk = r[4] %}
-            {% set matches = r[5] | from_json %}
+{% set first = r.first %}
+{% set last = r.last %}
+{% set dob = r.dob %}
+{% set country = r.country %}
+{% set risk = r.risk %}
+{% set matches = r.matches %}
+
 
             <tr>
                 <td>{{ first }}</td>
