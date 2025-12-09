@@ -263,11 +263,15 @@
                 detailsEl.innerHTML = `<span class="expand-btn" onclick="toggleProfile(${index})">Show full profile ▼</span>`;
                 
                 // Build the full profile
-                console.log("FULL PROFILE DATA:", data);
+               console.log("EXPANSION CLICKED, DATA RECEIVED:", data);
 
 profileEl.innerHTML = `
-    <pre>${JSON.stringify(data, null, 2)}</pre>
+    <div style="color: red; font-weight: bold;">DEBUG BLOCK ACTIVE</div>
+    <pre style="white-space: pre-wrap; font-size: 12px;">
+${JSON.stringify(data, null, 2)}
+    </pre>
 `;
+
 
             }
 
