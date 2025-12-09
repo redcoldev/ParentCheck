@@ -108,7 +108,6 @@ def load_uploaded_file(file):
 
 # =====================================================================
 # NORMALISE ROWS
-# Expecting: first_name, last_name, citizenship, dob
 # =====================================================================
 
 def normalise_rows(rows):
@@ -273,7 +272,7 @@ def processing(batch_id):
 
 
 # =====================================================================
-# API SCREEN — upgraded output for richer client summaries
+# API SCREEN — IMPROVED MATCH DETAILS (No debug needed)
 # =====================================================================
 
 @app.route("/api/screen", methods=["POST"])
@@ -281,8 +280,8 @@ def api_screen():
     data = request.json
 
     user_first = data.get("first_name", "").strip().lower()
-    user_last = data.get("last_name", "").strip().lower()
-    user_dob_raw = data.get("dob", "").strip()
+    user_last  = data.get("last_name", "").strip().lower()
+    raw_dob    = data.get("dob", "").strip()
 
     def normalise_dob(d):
         if not d:
@@ -294,7 +293,7 @@ def api_screen():
             return f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
         return None
 
-    user_dob = normalise_dob(user_dob_raw)
+    user_dob = normalise_dob(raw_dob)
 
     headers = {
         "Authorization": f"ApiKey {OPEN_SANCTIONS_KEY}",
@@ -307,7 +306,7 @@ def api_screen():
                 "schema": "Person",
                 "properties": {
                     "firstName": [data.get("first_name")],
-                    "lastName": [data.get("last_name")]
+                    "lastName":  [data.get("last_name")]
                 }
             }
         }
@@ -325,31 +324,19 @@ def api_screen():
         )
         os_json = resp.json()
     except Exception as e:
-        return {
-            "risk": "Error",
-            "summary": str(e),
-            "details": "",
-            "debug": {"error": str(e)}
-        }
+        return {"risk": "Error", "summary": str(e)}
 
     results = os_json.get("responses", {}).get("q", {}).get("results", [])
-    debug = []
 
     def names_match(props):
         aliases = props.get("alias", []) + props.get("name", [])
         aliases_norm = [a.lower() for a in aliases]
-
         for full in aliases_norm:
             parts = full.split()
             if len(parts) < 2:
                 continue
-
-            os_first = parts[0]
-            os_last = parts[-1]
-
-            if os_first == user_first and os_last == user_last:
+            if parts[0] == user_first and parts[-1] == user_last:
                 return True
-
         return False
 
     def dob_matches(user_dob, os_birth_dates):
@@ -359,34 +346,22 @@ def api_screen():
             return True
 
         yyyy = user_dob[:4]
-
         for bd in os_birth_dates:
             if not bd:
                 continue
-
             if len(bd) >= 10 and bd == user_dob:
                 return True
-
             if bd[:4] == yyyy:
                 return True
-
         return False
 
     for m in results:
         score = m.get("score", 0)
         props = m.get("properties", {})
-
         datasets = m.get("datasets", [])
 
         if not any(ds in SANCTION_DATASETS for ds in datasets):
             continue
-
-        debug.append({
-            "aliases": props.get("alias", []),
-            "score": score,
-            "birthDate": props.get("birthDate", [])
-        })
-
         if score != 1.0:
             continue
         if not names_match(props):
@@ -394,12 +369,13 @@ def api_screen():
         if not dob_matches(user_dob, props.get("birthDate", [])):
             continue
 
-        sanctions_list = []
+        sanctions_clean = []
         for s in props.get("sanctions", []):
-            sanctions_list.append({
+            sanctions_clean.append({
                 "program": s.get("program"),
+                "authority": s.get("authority"),
                 "listingDate": s.get("listingDate"),
-                "reason": (s.get("reason") or "")[:150]
+                "reason": (s.get("reason") or "Reason not provided")[:150]
             })
 
         positions = props.get("position", []) or props.get("role", [])
@@ -408,37 +384,34 @@ def api_screen():
             "risk": "Match",
             "summary": f"{data.get('first_name')} {data.get('last_name')} appears on sanctions lists",
 
-            "datasets": m.get("datasets", []),
+            "datasets": datasets,
             "aliases": props.get("alias", []),
             "birth_date": props.get("birthDate", []),
+            "birth_place": props.get("birthPlace", []),
+
+            "citizenship": props.get("citizenship", []),
+            "nationality": props.get("nationality", []),
+
+            "positions": positions,
             "topics": props.get("topics", []),
             "profile": props.get("summary", ""),
 
-            # New richer fields
-            "sanctions": sanctions_list,
-            "birth_place": props.get("birthPlace", []),
-            "citizenship": props.get("citizenship", []),
-            "nationality": props.get("nationality", []),
-            "positions": positions,
-
-            "debug": debug
+            "sanctions": sanctions_clean
         }
 
     return {
         "risk": "Clear",
-        "summary": "No sanctions match.",
-        "debug": debug
+        "summary": "No sanctions match."
     }
 
 
 
 # =====================================================================
-# MAIN BATCH PROCESSOR — unchanged
+# MAIN BATCH PROCESSOR (unchanged)
 # =====================================================================
 
 def process_batch(batch_id, rows):
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
-
     headers = {
         "Authorization": f"ApiKey {API_KEY}",
         "Content-Type": "application/json",
@@ -449,10 +422,7 @@ def process_batch(batch_id, rows):
         if len(digits) != 8:
             return False
 
-        user_day = digits[0:2]
-        user_month = digits[2:4]
-        user_year = digits[4:8]
-
+        dd, mm, yyyy = digits[:2], digits[2:4], digits[4:]
         for bd in os_birth_dates:
             if not bd:
                 continue
@@ -461,25 +431,21 @@ def process_batch(batch_id, rows):
             os_month = bd[5:7] if len(bd) >= 7 else None
             os_day = bd[8:10] if len(bd) >= 10 else None
 
-            if os_year != user_year:
+            if os_year != yyyy:
                 continue
 
             if os_month in (None, "00") or os_day in (None, "00"):
                 return True
-
-            if os_day == user_day and os_month == user_month:
+            if os_day == dd and os_month == mm:
                 return True
-
         return False
 
-    def citizenship_matches(user_country, props):
-        if not user_country:
+    def citizenship_matches(country, props):
+        if not country:
             return True
-
         nat = props.get("nationality", []) + props.get("citizenship", [])
         nat = [x.lower() for x in nat]
-
-        return user_country.lower() in nat
+        return country.lower() in nat
 
     batch_results = []
 
@@ -488,7 +454,7 @@ def process_batch(batch_id, rows):
 
         properties = {
             "firstName": [r["first_name"]],
-            "lastName": [r["last_name"]],
+            "lastName":  [r["last_name"]],
         }
 
         if r.get("dob"):
@@ -497,14 +463,7 @@ def process_batch(batch_id, rows):
         if r.get("country_of_citizenship"):
             properties["country"] = [r["country_of_citizenship"]]
 
-        payload = {
-            "queries": {
-                query_id: {
-                    "schema": "Person",
-                    "properties": properties
-                }
-            }
-        }
+        payload = {"queries": {query_id: {"schema": "Person", "properties": properties}}}
 
         try:
             resp = requests.post(
@@ -520,7 +479,6 @@ def process_batch(batch_id, rows):
         results_raw = os_json.get("responses", {}).get(query_id, {}).get("results", [])
 
         true_matches = []
-
         for m in results_raw:
             score = m.get("score", 0)
             if score < 0.75:
@@ -530,7 +488,6 @@ def process_batch(batch_id, rows):
 
             if not citizenship_matches(r.get("country_of_citizenship"), props):
                 continue
-
             if not dob_matches(r.get("dob"), props.get("birthDate", [])):
                 continue
 
@@ -574,7 +531,7 @@ def process_batch(batch_id, rows):
 
 
 # =====================================================================
-# FINISH ROUTE
+# FINISH / RESULTS
 # =====================================================================
 
 @app.route("/finish/<int:batch_id>")
@@ -589,8 +546,3 @@ def finish(batch_id):
 @login_required
 def results(batch_id):
     return redirect("/dashboard")
-
-
-@app.route("/processing_debug/<int:batch_id>")
-def processing_debug(batch_id):
-    return {"log": "processing…"}
