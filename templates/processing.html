@@ -48,7 +48,6 @@
         background: #fafafa;
     }
 
-    /* Temporary debugging column style */
     .debug {
         font-size: 11px;
         color: #444;
@@ -70,7 +69,7 @@
             <th>Status</th>
             <th>Summary</th>
             <th>Details</th>
-            <th>Debug</th> <!-- ADDED -->
+            <th>Debug</th>
         </tr>
     </thead>
     <tbody id="tableBody"></tbody>
@@ -94,7 +93,7 @@
             <td class="status" id="status-${index}">Checking…</td>
             <td id="summary-${index}">—</td>
             <td id="details-${index}">—</td>
-            <td class="debug" id="debug-${index}">—</td>  <!-- ADDED -->
+            <td class="debug" id="debug-${index}">—</td>
         `;
         document.getElementById("tableBody").appendChild(tr);
 
@@ -111,7 +110,6 @@
             const detailsEl = document.getElementById(`details-${index}`);
             const debugEl   = document.getElementById(`debug-${index}`);
 
-            // STATUS
             if (data.risk === "Clear") {
                 statusEl.textContent = "✓ Clear";
                 statusEl.classList.add("clear");
@@ -120,10 +118,8 @@
                 statusEl.classList.add("match");
             }
 
-            // SUMMARY
             summaryEl.textContent = data.summary || "(no summary)";
 
-            // DETAILS
             const details = [];
 
             if (data.datasets?.length > 0) {
@@ -134,12 +130,34 @@
                 details.push("<strong>Aliases:</strong> " + data.aliases.slice(0, 5).join(", "));
             }
 
-            if (data.birth_date) {
-                details.push("<strong>Birth date:</strong> " + data.birth_date);
+            if (data.birth_date?.length > 0) {
+                details.push("<strong>Birth date:</strong> " + data.birth_date.join(", "));
             }
 
-            if (data.birth_place) {
-                details.push("<strong>Birthplace:</strong> " + data.birth_place);
+            if (data.birth_place?.length > 0) {
+                details.push("<strong>Birthplace:</strong> " + data.birth_place.join(", "));
+            }
+
+            if (data.citizenship?.length > 0) {
+                details.push("<strong>Citizenship:</strong> " + data.citizenship.join(", "));
+            }
+
+            if (data.nationality?.length > 0) {
+                details.push("<strong>Nationality:</strong> " + data.nationality.join(", "));
+            }
+
+            if (data.positions?.length > 0) {
+                details.push("<strong>Positions:</strong> " + data.positions.join(", "));
+            }
+
+            if (data.sanctions?.length > 0) {
+                const lines = data.sanctions.map(s => {
+                    const prog = s.program || "Unknown program";
+                    const date = s.listingDate || "";
+                    const reason = s.reason || "";
+                    return `${prog}${date ? " — " + date : ""}${reason ? " — \"" + reason + "\"" : ""}`;
+                });
+                details.push("<strong>Sanctions:</strong><br>• " + lines.join("<br>• "));
             }
 
             if (data.topics?.length > 0) {
@@ -147,15 +165,14 @@
             }
 
             if (data.profile) {
-                const short = data.profile.length > 150 
-                    ? data.profile.substring(0, 150) + "…" 
+                const short = data.profile.length > 150
+                    ? data.profile.substring(0, 150) + "…"
                     : data.profile;
                 details.push("<strong>Profile:</strong> " + short);
             }
 
             detailsEl.innerHTML = details.length > 0 ? details.join("<br>") : "—";
 
-            // DEBUG OUTPUT (FULL JSON)
             debugEl.textContent = JSON.stringify(data.debug, null, 2);
 
         } catch (err) {
