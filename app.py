@@ -17,7 +17,6 @@ import psycopg
 import requests
 
 
-
 SANCTION_DATASETS = {
     "us_ofac_sdn",
     "us_ofac_cons",
@@ -29,10 +28,6 @@ SANCTION_DATASETS = {
     "ua_sanctions",
     "ru_ns_sanctions"
 }
-
-
-
-
 
 # =====================================================================
 # CONFIG
@@ -88,7 +83,7 @@ def get_db():
 
 
 # =====================================================================
-# FILE LOADER (CSV + XLSX)
+# FILE LOADER
 # =====================================================================
 
 def load_uploaded_file(file):
@@ -114,23 +109,23 @@ def normalise_rows(rows):
     if not rows:
         return []
 
+    # header detection
     if any(ch.isalpha() for ch in "".join(rows[0])):
         rows = rows[1:]
 
+    # drop empty rows
     rows = [r for r in rows if any(cell.strip() for cell in r)]
 
     clean = []
     for r in rows:
         while len(r) < 4:
             r.append("")
-
         clean.append({
             "first_name": r[0].strip(),
             "last_name": r[1].strip(),
             "country_of_citizenship": r[2].strip(),
             "dob": r[3].strip(),
         })
-
     return clean
 
 
@@ -160,16 +155,11 @@ def login():
         cur.close()
         conn.close()
 
-        if not user:
+        if not user or password != user[2]:
             flash("Invalid credentials", "danger")
             return redirect("/login")
 
-        uid, uemail, stored_pw, school = user
-
-        if stored_pw != password:
-            flash("Invalid credentials", "danger")
-            return redirect("/login")
-
+        uid, uemail, _, school = user
         login_user(User(uid, uemail, school))
         return redirect("/dashboard")
 
@@ -227,7 +217,6 @@ def upload():
         conn.close()
 
         session[f"batch_{batch_id}_rows"] = rows_clean
-
         return redirect(f"/preview/{batch_id}")
 
     return render_template("upload.html")
@@ -272,16 +261,16 @@ def processing(batch_id):
 
 
 # =====================================================================
-# API SCREEN — IMPROVED MATCH DETAILS (No debug needed)
+# API SCREEN — FULL ENTITY PROFILE FOR EXPANDED VIEW
 # =====================================================================
 
 @app.route("/api/screen", methods=["POST"])
 def api_screen():
     data = request.json
 
-    user_first = data.get("first_name", "").strip().lower()
-    user_last  = data.get("last_name", "").strip().lower()
-    raw_dob    = data.get("dob", "").strip()
+    first = data.get("first_name", "").strip()
+    last = data.get("last_name", "").strip()
+    raw_dob = data.get("dob", "").strip()
 
     def normalise_dob(d):
         if not d:
@@ -293,7 +282,7 @@ def api_screen():
             return f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
         return None
 
-    user_dob = normalise_dob(raw_dob)
+    dob = normalise_dob(raw_dob)
 
     headers = {
         "Authorization": f"ApiKey {OPEN_SANCTIONS_KEY}",
@@ -305,15 +294,15 @@ def api_screen():
             "q": {
                 "schema": "Person",
                 "properties": {
-                    "firstName": [data.get("first_name")],
-                    "lastName":  [data.get("last_name")]
+                    "firstName": [first],
+                    "lastName": [last]
                 }
             }
         }
     }
 
-    if user_dob:
-        payload["queries"]["q"]["properties"]["birthDate"] = [user_dob]
+    if dob:
+        payload["queries"]["q"]["properties"]["birthDate"] = [dob]
 
     try:
         resp = requests.post(
@@ -328,115 +317,89 @@ def api_screen():
 
     results = os_json.get("responses", {}).get("q", {}).get("results", [])
 
+    # Matching helpers
     def names_match(props):
         aliases = props.get("alias", []) + props.get("name", [])
-        aliases_norm = [a.lower() for a in aliases]
-        for full in aliases_norm:
-            parts = full.split()
-            if len(parts) < 2:
-                continue
-            if parts[0] == user_first and parts[-1] == user_last:
+        for a in aliases:
+            parts = a.lower().split()
+            if len(parts) >= 2 and parts[0] == first.lower() and parts[-1] == last.lower():
                 return True
         return False
 
-    def dob_matches(user_dob, os_birth_dates):
-        if not user_dob:
+    def dob_matches(u_dob, birth_dates):
+        if not u_dob:
             return True
-        if not os_birth_dates:
+        if not birth_dates:
             return True
-
-        yyyy = user_dob[:4]
-        for bd in os_birth_dates:
+        yyyy = u_dob[:4]
+        for bd in birth_dates:
             if not bd:
                 continue
-            if len(bd) >= 10 and bd == user_dob:
+            if len(bd) >= 10 and bd == u_dob:
                 return True
             if bd[:4] == yyyy:
                 return True
         return False
 
+    # Evaluate matches
     for m in results:
-        score = m.get("score", 0)
         props = m.get("properties", {})
+        score = m.get("score", 0)
         datasets = m.get("datasets", [])
 
-        if not any(ds in SANCTION_DATASETS for ds in datasets):
-            continue
         if score != 1.0:
+            continue
+        if not any(ds in SANCTION_DATASETS for ds in datasets):
             continue
         if not names_match(props):
             continue
-        if not dob_matches(user_dob, props.get("birthDate", [])):
+        if not dob_matches(dob, props.get("birthDate", [])):
             continue
 
-        sanctions_clean = []
+        # Clean sanctions entries
+        sanctions = []
         for s in props.get("sanctions", []):
-            sanctions_clean.append({
+            sanctions.append({
                 "program": s.get("program"),
                 "authority": s.get("authority"),
                 "listingDate": s.get("listingDate"),
-                "reason": (s.get("reason") or "Reason not provided")[:150]
+                "reason": (s.get("reason") or "Reason not provided")[:200]
             })
 
-        positions = props.get("position", []) or props.get("role", [])
-
+        # Full profile — send ALL fields
         return {
             "risk": "Match",
-            "summary": f"{data.get('first_name')} {data.get('last_name')} appears on sanctions lists",
-
+            "summary": f"{first} {last} appears on sanctions lists",
             "datasets": datasets,
-            "aliases": props.get("alias", []),
-            "birth_date": props.get("birthDate", []),
-            "birth_place": props.get("birthPlace", []),
-
-            "citizenship": props.get("citizenship", []),
-            "nationality": props.get("nationality", []),
-
-            "positions": positions,
-            "topics": props.get("topics", []),
-            "profile": props.get("summary", ""),
-
-            "sanctions": sanctions_clean
+            "short_profile": props.get("summary", "")[:200],
+            "sanctions": sanctions,
+            "props": props  # full OS properties for OS-style renderer
         }
 
-    return {
-        "risk": "Clear",
-        "summary": "No sanctions match."
-    }
-
+    return {"risk": "Clear", "summary": "No sanctions match."}
 
 
 # =====================================================================
-# MAIN BATCH PROCESSOR (unchanged)
+# MAIN BATCH PROCESSOR (unchanged from prior version)
 # =====================================================================
 
 def process_batch(batch_id, rows):
     API_KEY = os.environ.get("OPEN_SANCTIONS_KEY")
-    headers = {
-        "Authorization": f"ApiKey {API_KEY}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"ApiKey {API_KEY}", "Content-Type": "application/json"}
 
     def dob_matches(user_dob, os_birth_dates):
         digits = ''.join(ch for ch in user_dob if ch.isdigit())
         if len(digits) != 8:
             return False
-
         dd, mm, yyyy = digits[:2], digits[2:4], digits[4:]
         for bd in os_birth_dates:
             if not bd:
                 continue
-
-            os_year = bd[:4]
-            os_month = bd[5:7] if len(bd) >= 7 else None
-            os_day = bd[8:10] if len(bd) >= 10 else None
-
-            if os_year != yyyy:
+            if bd[:4] != yyyy:
                 continue
-
-            if os_month in (None, "00") or os_day in (None, "00"):
+            if len(bd) < 10:
                 return True
-            if os_day == dd and os_month == mm:
+            if bd[8:10] == dd and bd[5:7] == mm:
                 return True
         return False
 
@@ -451,15 +414,10 @@ def process_batch(batch_id, rows):
 
     for idx, r in enumerate(rows):
         query_id = f"row{idx}"
-
-        properties = {
-            "firstName": [r["first_name"]],
-            "lastName":  [r["last_name"]],
-        }
+        properties = {"firstName": [r["first_name"]], "lastName": [r["last_name"]]}
 
         if r.get("dob"):
             properties["birthDate"] = [r["dob"]]
-
         if r.get("country_of_citizenship"):
             properties["country"] = [r["country_of_citizenship"]]
 
@@ -473,24 +431,21 @@ def process_batch(batch_id, rows):
                 timeout=12
             )
             os_json = resp.json()
-        except Exception as e:
-            os_json = {"error": str(e)}
+        except Exception:
+            os_json = {"error": "Failed OS request"}
 
         results_raw = os_json.get("responses", {}).get(query_id, {}).get("results", [])
-
         true_matches = []
+
         for m in results_raw:
             score = m.get("score", 0)
+            props = m.get("properties", {})
             if score < 0.75:
                 continue
-
-            props = m.get("properties", {})
-
             if not citizenship_matches(r.get("country_of_citizenship"), props):
                 continue
             if not dob_matches(r.get("dob"), props.get("birthDate", [])):
                 continue
-
             true_matches.append(m)
 
         risk = "High" if true_matches else "Clear"
@@ -507,7 +462,6 @@ def process_batch(batch_id, rows):
         })
 
     conn, cur = get_db()
-
     for row in batch_results:
         cur.execute("""
             INSERT INTO results
@@ -524,7 +478,6 @@ def process_batch(batch_id, rows):
             json.dumps(row["match_data"]),
             json.dumps(row["raw_json"]),
         ))
-
     conn.commit()
     cur.close()
     conn.close()
