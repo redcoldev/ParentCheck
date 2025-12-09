@@ -251,16 +251,24 @@
             const detailsEl = document.getElementById(`details-${index}`);
             const profileEl = document.getElementById(`profile-${index}`);
 
-            if (data.risk === "Clear") {
-                statusEl.textContent = "✓ Clear";
-                statusEl.classList.add("clear");
-                summaryEl.textContent = data.summary;
-                detailsEl.textContent = "—";
-            } else {
-                statusEl.textContent = "⚠ Match";
-                statusEl.classList.add("match");
-                summaryEl.textContent = data.short_profile || data.summary;
-                detailsEl.innerHTML = `<span class="expand-btn" onclick="toggleProfile(${index})">Show full profile ▼</span>`;
+if (data.risk !== "Clear") {
+    // MATCH CASE
+    statusEl.textContent = "⚠ Match";
+    statusEl.classList.add("match");
+
+    summaryEl.textContent = data.short_profile || data.summary;
+
+    detailsEl.innerHTML = `<span class="expand-btn" onclick="toggleProfile(${index})">Show full profile ▼</span>`;
+                
+    profileEl.innerHTML = renderProfile(data.props, data.sanctions);
+} else {
+    // CLEAR CASE
+    statusEl.textContent = "✓ Clear";
+    statusEl.classList.add("clear");
+    summaryEl.textContent = data.summary;
+    detailsEl.textContent = "—";
+}
+
                 
                 // Build the full profile
                console.log("EXPANSION CLICKED, DATA RECEIVED:", data);
