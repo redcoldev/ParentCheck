@@ -8,14 +8,12 @@
     body {
         font-family: Arial, sans-serif;
         background: #f5f5f5;
-        padding: 10px 20px;
+        padding: 12px 20px;
     }
 
     h1 {
-        margin: 0 0 10px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #333;
+        font-size: 20px;
+        margin-bottom: 12px;
     }
 
     table {
@@ -31,22 +29,60 @@
         vertical-align: top;
     }
 
-    th {
-        background: #f0f0f0;
-        font-weight: 600;
-        text-align: left;
-    }
+    th { background: #eee; font-weight: 600; }
 
-    .status {
-        font-weight: 600;
-    }
-
+    .status { font-weight: bold; }
     .clear { color: #1a7f1a; }
     .match { color: #b30000; }
 
-    tbody tr:nth-child(even) {
-        background: #fafafa;
+    .profile-container {
+        background: #fff;
+        padding: 14px;
+        border: 1px solid #ddd;
+        margin-top: 8px;
+        box-shadow: 0px 2px 4px rgba(0,0,0,0.05);
     }
+
+    .profile-card {
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .profile-card h3 {
+        margin: 0 0 8px 0;
+        font-size: 15px;
+        color: #444;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    .expand-btn {
+        cursor: pointer;
+        color: #005bbb;
+        text-decoration: underline;
+        font-size: 12px;
+    }
+
+    table.os-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 6px;
+        margin-bottom: 10px;
+    }
+
+    table.os-table th, table.os-table td {
+        border: 1px solid #ccc;
+        padding: 4px 6px;
+        font-size: 12px;
+    }
+
+    table.os-table th {
+        background: #f3f3f3;
+    }
+
 </style>
 </head>
 <body>
@@ -67,9 +103,114 @@
     <tbody id="tableBody"></tbody>
 </table>
 
+
 <script>
     const rows = {{ rows_json | safe }};
     let index = 0;
+
+    function createCard(title, contentHTML) {
+        return `
+            <div class="profile-card">
+                <h3>${title}</h3>
+                ${contentHTML}
+            </div>
+        `;
+    }
+
+    function renderTable(headers, rows) {
+        let thead = "<tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+        let body = rows.map(r => {
+            return "<tr>" + r.map(c => `<td>${c || ""}</td>`).join("") + "</tr>";
+        }).join("");
+        return `<table class="os-table">${thead}${body}</table>`;
+    }
+
+    function renderProfile(props, sanctions) {
+        let html = "";
+
+        // Sanctions
+        if (sanctions?.length) {
+            const rows = sanctions.map(s => [
+                s.program || "",
+                s.authority || "",
+                s.listingDate || "",
+                s.reason || "Reason not provided"
+            ]);
+            html += createCard("Sanctions", renderTable(
+                ["Program", "Authority", "Date", "Reason"], rows
+            ));
+        }
+
+        // Identity
+        const idRows = [];
+        if (props.birthDate?.length) idRows.push(["Birth date", props.birthDate.join(", ")]);
+        if (props.birthPlace?.length) idRows.push(["Birthplace", props.birthPlace.join(", ")]);
+        if (props.citizenship?.length) idRows.push(["Citizenship", props.citizenship.join(", ")]);
+        if (props.nationality?.length) idRows.push(["Nationality", props.nationality.join(", ")]);
+        if (props.gender) idRows.push(["Gender", props.gender]);
+
+        if (idRows.length) {
+            html += createCard("Identity & Personal Info", renderTable(["Field", "Value"], idRows));
+        }
+
+        // Aliases
+        if (props.alias?.length) {
+            html += createCard("Aliases", props.alias.map(a => "• " + a).join("<br>"));
+        }
+
+        // Family members
+        if (props.family?.length) {
+            const fm = props.family.map(f => [
+                f.name || "",
+                f.relationship || "",
+                f.summary || ""
+            ]);
+            html += createCard("Family Members", renderTable(["Name","Relationship","Notes"], fm));
+        }
+
+        // Employment / Positions
+        if (props.position?.length) {
+            html += createCard("Employment / Roles",
+                props.position.map(p => "• " + p).join("<br>")
+            );
+        }
+
+        // Addresses
+        if (props.address?.length) {
+            const rows = props.address.map(a => [
+                a.country || "",
+                a.city || "",
+                a.street || "",
+                (a.note || "")
+            ]);
+            html += createCard("Addresses",
+                renderTable(["Country","City","Street","Note"], rows)
+            );
+        }
+
+        // Identifiers
+        if (props.identifier?.length) {
+            const rows = props.identifier.map(i => [
+                i.type || "",
+                i.value || "",
+                i.note || ""
+            ]);
+            html += createCard("Identifiers", renderTable(["Type","Value","Note"], rows));
+        }
+
+        // Topics
+        if (props.topics?.length) {
+            html += createCard("Topics", props.topics.join(", "));
+        }
+
+        // Summary
+        if (props.summary) {
+            html += createCard("Summary / Bio", props.summary);
+        }
+
+        return html || "<em>No additional data available.</em>";
+    }
+
 
     async function processNext() {
         if (index >= rows.length) return;
@@ -87,6 +228,16 @@
         `;
         document.getElementById("tableBody").appendChild(tr);
 
+        // EXPANSION ROW
+        const detailRow = document.createElement("tr");
+        detailRow.classList.add("hidden");
+        detailRow.innerHTML = `
+            <td colspan="6">
+                <div id="profile-${index}" class="profile-container"></div>
+            </td>
+        `;
+        document.getElementById("tableBody").appendChild(detailRow);
+
         try {
             const resp = await fetch("/api/screen", {
                 method: "POST",
@@ -98,70 +249,22 @@
             const statusEl  = document.getElementById(`status-${index}`);
             const summaryEl = document.getElementById(`summary-${index}`);
             const detailsEl = document.getElementById(`details-${index}`);
+            const profileEl = document.getElementById(`profile-${index}`);
 
             if (data.risk === "Clear") {
                 statusEl.textContent = "✓ Clear";
                 statusEl.classList.add("clear");
+                summaryEl.textContent = data.summary;
+                detailsEl.textContent = "—";
             } else {
                 statusEl.textContent = "⚠ Match";
                 statusEl.classList.add("match");
+                summaryEl.textContent = data.short_profile || data.summary;
+                detailsEl.innerHTML = `<span class="expand-btn" onclick="toggleProfile(${index})">Show full profile ▼</span>`;
+                
+                // Build the full profile
+                profileEl.innerHTML = renderProfile(data.props, data.sanctions);
             }
-
-            summaryEl.textContent = data.summary || "(no summary)";
-
-            const details = [];
-
-            if (data.datasets?.length > 0) {
-                details.push("<strong>Lists:</strong> " + data.datasets.join(", "));
-            }
-
-            if (data.aliases?.length > 0) {
-                details.push("<strong>Aliases:</strong> " + data.aliases.slice(0, 5).join(", "));
-            }
-
-            if (data.birth_date?.length > 0) {
-                details.push("<strong>Date of birth:</strong> " + data.birth_date.join(", "));
-            }
-
-            if (data.birth_place?.length > 0) {
-                details.push("<strong>Birthplace:</strong> " + data.birth_place.join(", "));
-            }
-
-            if (data.citizenship?.length > 0) {
-                details.push("<strong>Citizenship:</strong> " + data.citizenship.join(", "));
-            }
-
-            if (data.nationality?.length > 0) {
-                details.push("<strong>Nationality:</strong> " + data.nationality.join(", "));
-            }
-
-            if (data.positions?.length > 0) {
-                details.push("<strong>Positions:</strong> " + data.positions.join(", "));
-            }
-
-            if (data.sanctions?.length > 0) {
-                const lines = data.sanctions.map(s => {
-                    const prog = s.program || "Unknown program";
-                    const auth = s.authority || "Unknown authority";
-                    const date = s.listingDate || "";
-                    const reason = s.reason || "Reason not provided";
-                    return `${prog} — ${auth}${date ? " — " + date : ""} — "${reason}"`;
-                });
-                details.push("<strong>Sanctioned under:</strong><br>• " + lines.join("<br>• "));
-            }
-
-            if (data.topics?.length > 0) {
-                details.push("<strong>Topics:</strong> " + data.topics.join(", "));
-            }
-
-            if (data.profile) {
-                const short = data.profile.length > 150
-                    ? data.profile.substring(0, 150) + "…"
-                    : data.profile;
-                details.push("<strong>Profile:</strong> " + short);
-            }
-
-            detailsEl.innerHTML = details.length > 0 ? details.join("<br>") : "—";
 
         } catch (err) {
             document.getElementById(`status-${index}`).textContent = "❌ Error";
@@ -171,6 +274,19 @@
 
         index++;
         processNext();
+    }
+
+    function toggleProfile(i) {
+        const row = document.querySelectorAll("tr")[ (i*2) +1 ]; 
+        const btn = document.querySelector(`#details-${i} .expand-btn`);
+
+        if (row.classList.contains("hidden")) {
+            row.classList.remove("hidden");
+            btn.textContent = "Hide ▲";
+        } else {
+            row.classList.add("hidden");
+            btn.textContent = "Show full profile ▼";
+        }
     }
 
     processNext();
