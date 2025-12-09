@@ -47,13 +47,6 @@
     tbody tr:nth-child(even) {
         background: #fafafa;
     }
-
-    .debug {
-        font-size: 11px;
-        color: #444;
-        white-space: pre-wrap;
-        max-width: 400px;
-    }
 </style>
 </head>
 <body>
@@ -69,7 +62,6 @@
             <th>Status</th>
             <th>Summary</th>
             <th>Details</th>
-            <th>Debug</th>
         </tr>
     </thead>
     <tbody id="tableBody"></tbody>
@@ -77,7 +69,6 @@
 
 <script>
     const rows = {{ rows_json | safe }};
-    const batchId = {{ batch_id }};
     let index = 0;
 
     async function processNext() {
@@ -93,7 +84,6 @@
             <td class="status" id="status-${index}">Checking…</td>
             <td id="summary-${index}">—</td>
             <td id="details-${index}">—</td>
-            <td class="debug" id="debug-${index}">—</td>
         `;
         document.getElementById("tableBody").appendChild(tr);
 
@@ -108,7 +98,6 @@
             const statusEl  = document.getElementById(`status-${index}`);
             const summaryEl = document.getElementById(`summary-${index}`);
             const detailsEl = document.getElementById(`details-${index}`);
-            const debugEl   = document.getElementById(`debug-${index}`);
 
             if (data.risk === "Clear") {
                 statusEl.textContent = "✓ Clear";
@@ -131,7 +120,7 @@
             }
 
             if (data.birth_date?.length > 0) {
-                details.push("<strong>Birth date:</strong> " + data.birth_date.join(", "));
+                details.push("<strong>Date of birth:</strong> " + data.birth_date.join(", "));
             }
 
             if (data.birth_place?.length > 0) {
@@ -153,11 +142,12 @@
             if (data.sanctions?.length > 0) {
                 const lines = data.sanctions.map(s => {
                     const prog = s.program || "Unknown program";
+                    const auth = s.authority || "Unknown authority";
                     const date = s.listingDate || "";
-                    const reason = s.reason || "";
-                    return `${prog}${date ? " — " + date : ""}${reason ? " — \"" + reason + "\"" : ""}`;
+                    const reason = s.reason || "Reason not provided";
+                    return `${prog} — ${auth}${date ? " — " + date : ""} — "${reason}"`;
                 });
-                details.push("<strong>Sanctions:</strong><br>• " + lines.join("<br>• "));
+                details.push("<strong>Sanctioned under:</strong><br>• " + lines.join("<br>• "));
             }
 
             if (data.topics?.length > 0) {
@@ -173,13 +163,10 @@
 
             detailsEl.innerHTML = details.length > 0 ? details.join("<br>") : "—";
 
-            debugEl.textContent = JSON.stringify(data.debug, null, 2);
-
         } catch (err) {
-            document.getElementById(`status-${index}`).textContent  = "❌ Error";
+            document.getElementById(`status-${index}`).textContent = "❌ Error";
             document.getElementById(`summary-${index}`).textContent = err.toString();
             document.getElementById(`details-${index}`).textContent = "—";
-            document.getElementById(`debug-${index}`).textContent   = err.toString();
         }
 
         index++;
