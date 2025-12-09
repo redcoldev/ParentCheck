@@ -306,7 +306,7 @@ def api_screen():
 
     try:
         resp = requests.post(
-            "https://api.opensanctions.org/match/default",
+            "https://api.opensanctions.org/match/sanctions",
             headers=headers,
             json=payload,
             timeout=12
