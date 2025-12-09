@@ -34,8 +34,6 @@ SANCTION_DATASETS = {
 
 
 
-
-
 # =====================================================================
 # CONFIG
 # =====================================================================
@@ -117,23 +115,20 @@ def normalise_rows(rows):
     if not rows:
         return []
 
-    # Remove header row if alphabetical values exist in row 0
     if any(ch.isalpha() for ch in "".join(rows[0])):
         rows = rows[1:]
 
-    # Remove completely empty rows
     rows = [r for r in rows if any(cell.strip() for cell in r)]
 
     clean = []
     for r in rows:
-        # pad row up to 4 columns
         while len(r) < 4:
             r.append("")
 
         clean.append({
             "first_name": r[0].strip(),
             "last_name": r[1].strip(),
-            "country_of_citizenship": r[2].strip(),   # ✔ clean naming
+            "country_of_citizenship": r[2].strip(),
             "dob": r[3].strip(),
         })
 
@@ -232,7 +227,6 @@ def upload():
         cur.close()
         conn.close()
 
-        # Store rows in session for further processing
         session[f"batch_{batch_id}_rows"] = rows_clean
 
         return redirect(f"/preview/{batch_id}")
@@ -278,9 +272,8 @@ def processing(batch_id):
     )
 
 
-
 # =====================================================================
-# PROCESSING PAGE 
+# API SCREEN — upgraded output for richer client summaries
 # =====================================================================
 
 @app.route("/api/screen", methods=["POST"])
@@ -291,7 +284,6 @@ def api_screen():
     user_last = data.get("last_name", "").strip().lower()
     user_dob_raw = data.get("dob", "").strip()
 
-    # Normalise DOB to YYYY-MM-DD
     def normalise_dob(d):
         if not d:
             return None
@@ -304,7 +296,6 @@ def api_screen():
 
     user_dob = normalise_dob(user_dob_raw)
 
-    # Build API request
     headers = {
         "Authorization": f"ApiKey {OPEN_SANCTIONS_KEY}",
         "Content-Type": "application/json",
@@ -325,7 +316,6 @@ def api_screen():
     if user_dob:
         payload["queries"]["q"]["properties"]["birthDate"] = [user_dob]
 
-    # Call OS
     try:
         resp = requests.post(
             "https://api.opensanctions.org/match/default",
@@ -346,7 +336,6 @@ def api_screen():
     debug = []
 
     def names_match(props):
-        """Exact first + last name match against any OS alias."""
         aliases = props.get("alias", []) + props.get("name", [])
         aliases_norm = [a.lower() for a in aliases]
 
@@ -364,7 +353,6 @@ def api_screen():
         return False
 
     def dob_matches(user_dob, os_birth_dates):
-        """DOB exact match or year-only match."""
         if not user_dob:
             return True
         if not os_birth_dates:
@@ -376,24 +364,20 @@ def api_screen():
             if not bd:
                 continue
 
-            # Full DOB match
             if len(bd) >= 10 and bd == user_dob:
                 return True
 
-            # Year match
             if bd[:4] == yyyy:
                 return True
 
         return False
 
-    # Evaluate candidates
     for m in results:
         score = m.get("score", 0)
         props = m.get("properties", {})
 
         datasets = m.get("datasets", [])
 
-        # Only accept true sanctions datasets
         if not any(ds in SANCTION_DATASETS for ds in datasets):
             continue
 
@@ -405,26 +389,41 @@ def api_screen():
 
         if score != 1.0:
             continue
-
         if not names_match(props):
             continue
-
         if not dob_matches(user_dob, props.get("birthDate", [])):
             continue
 
-        # Accept this match
+        sanctions_list = []
+        for s in props.get("sanctions", []):
+            sanctions_list.append({
+                "program": s.get("program"),
+                "listingDate": s.get("listingDate"),
+                "reason": (s.get("reason") or "")[:150]
+            })
+
+        positions = props.get("position", []) or props.get("role", [])
+
         return {
             "risk": "Match",
             "summary": f"{data.get('first_name')} {data.get('last_name')} appears on sanctions lists",
+
             "datasets": m.get("datasets", []),
             "aliases": props.get("alias", []),
             "birth_date": props.get("birthDate", []),
             "topics": props.get("topics", []),
             "profile": props.get("summary", ""),
+
+            # New richer fields
+            "sanctions": sanctions_list,
+            "birth_place": props.get("birthPlace", []),
+            "citizenship": props.get("citizenship", []),
+            "nationality": props.get("nationality", []),
+            "positions": positions,
+
             "debug": debug
         }
 
-    # Otherwise no match
     return {
         "risk": "Clear",
         "summary": "No sanctions match.",
@@ -434,7 +433,7 @@ def api_screen():
 
 
 # =====================================================================
-# MAIN BATCH PROCESSOR — CALLS OPENSANCTIONS
+# MAIN BATCH PROCESSOR — unchanged
 # =====================================================================
 
 def process_batch(batch_id, rows):
@@ -446,18 +445,6 @@ def process_batch(batch_id, rows):
     }
 
     def dob_matches(user_dob, os_birth_dates):
-        """
-        DOB RULE:
-        - User gives full DOB (DD/MM/YYYY or YYYY-MM-DD)
-        - OS may give full DOB OR year-only
-        - Accept match if year matches AND:
-             * OS has only year → accept
-             * OS has full DOB → must match exactly
-        """
-        if not user_dob:
-            return True
-
-        # Normalise user DOB to digits only
         digits = ''.join(ch for ch in user_dob if ch.isdigit())
         if len(digits) != 8:
             return False
@@ -470,22 +457,16 @@ def process_batch(batch_id, rows):
             if not bd:
                 continue
 
-            if len(bd) < 4:
-                continue
-
             os_year = bd[:4]
             os_month = bd[5:7] if len(bd) >= 7 else None
             os_day = bd[8:10] if len(bd) >= 10 else None
 
-            # Year must match
             if os_year != user_year:
                 continue
 
-            # If OS only gives year, accept
             if os_month in (None, "00") or os_day in (None, "00"):
                 return True
 
-            # Full DOB match
             if os_day == user_day and os_month == user_month:
                 return True
 
@@ -500,12 +481,8 @@ def process_batch(batch_id, rows):
 
         return user_country.lower() in nat
 
-    # Store results for DB write
     batch_results = []
 
-    # ================================================================
-    # PROCESS EACH ROW
-    # ================================================================
     for idx, r in enumerate(rows):
         query_id = f"row{idx}"
 
@@ -529,7 +506,6 @@ def process_batch(batch_id, rows):
             }
         }
 
-        # Perform OS API request
         try:
             resp = requests.post(
                 "https://api.opensanctions.org/match/sanctions",
@@ -543,23 +519,18 @@ def process_batch(batch_id, rows):
 
         results_raw = os_json.get("responses", {}).get(query_id, {}).get("results", [])
 
-        # Apply rules to determine TRUE matches
         true_matches = []
 
         for m in results_raw:
             score = m.get("score", 0)
-
-            # Score threshold
             if score < 0.75:
                 continue
 
             props = m.get("properties", {})
 
-            # Citizenship test
             if not citizenship_matches(r.get("country_of_citizenship"), props):
                 continue
 
-            # DOB test
             if not dob_matches(r.get("dob"), props.get("birthDate", [])):
                 continue
 
@@ -574,13 +545,10 @@ def process_batch(batch_id, rows):
             "dob": r["dob"],
             "country": r["country_of_citizenship"],
             "risk_level": risk,
-            "match_data": true_matches,    # jsonb
-            "raw_json": results_raw        # store full API response raw if needed
+            "match_data": true_matches,
+            "raw_json": results_raw
         })
 
-    # ================================================================
-    # WRITE RESULTS TO DATABASE
-    # ================================================================
     conn, cur = get_db()
 
     for row in batch_results:
@@ -606,22 +574,16 @@ def process_batch(batch_id, rows):
 
 
 # =====================================================================
-# FINISH ROUTE — executes the processing
+# FINISH ROUTE
 # =====================================================================
 
 @app.route("/finish/<int:batch_id>")
 @login_required
 def finish(batch_id):
     rows = session.get(f"batch_{batch_id}_rows", [])
-
-    process_batch(batch_id, rows)   # Run OS checks
-
+    process_batch(batch_id, rows)
     return redirect(f"/results/{batch_id}")
 
-
-# =====================================================================
-# RESULTS PAGE
-# =====================================================================
 
 @app.route("/results/<int:batch_id>")
 @login_required
@@ -629,14 +591,6 @@ def results(batch_id):
     return redirect("/dashboard")
 
 
-
-
-# =====================================================================
-# OPTIONAL DEBUG ROUTE
-# =====================================================================
-
 @app.route("/processing_debug/<int:batch_id>")
 def processing_debug(batch_id):
-    # Placeholder for logs or debugging instrumentation
-    # (Empty for now unless you want live debug output.)
     return {"log": "processing…"}
