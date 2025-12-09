@@ -372,9 +372,14 @@ def api_screen():
             "summary": f"{first} {last} appears on sanctions lists",
             "datasets": datasets,
             "short_profile": props.get("summary", "")[:200],
+
+            # sanctions table (frontend uses it)
             "sanctions": sanctions,
-            "props": props  # full OS properties for OS-style renderer
+
+            # FULL PROPERTIES for dynamic OS-style sections
+            "props": props
         }
+
 
     return {"risk": "Clear", "summary": "No sanctions match."}
 
