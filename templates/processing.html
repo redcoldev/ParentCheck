@@ -263,7 +263,12 @@
                 detailsEl.innerHTML = `<span class="expand-btn" onclick="toggleProfile(${index})">Show full profile ▼</span>`;
                 
                 // Build the full profile
-                profileEl.innerHTML = renderProfile(data.props, data.sanctions);
+                console.log("FULL PROFILE DATA:", data);
+
+profileEl.innerHTML = `
+    <pre>${JSON.stringify(data, null, 2)}</pre>
+`;
+
             }
 
         } catch (err) {
